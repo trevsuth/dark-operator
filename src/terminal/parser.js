@@ -37,3 +37,37 @@ export function parseCommand(input) {
     tokens,
   };
 }
+
+export function splitPipeline(input) {
+  const segments = [];
+  let segment = "";
+  let quote = null;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    const next = input[index + 1];
+
+    if (char === "\\" && next) {
+      segment += char + next;
+      index += 1;
+      continue;
+    }
+
+    if ((char === '"' || char === "'") && (!quote || quote === char)) {
+      quote = quote ? null : char;
+      segment += char;
+      continue;
+    }
+
+    if (!quote && char === "|") {
+      segments.push(segment.trim());
+      segment = "";
+      continue;
+    }
+
+    segment += char;
+  }
+
+  segments.push(segment.trim());
+  return segments;
+}
