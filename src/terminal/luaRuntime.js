@@ -1,15 +1,16 @@
-import { lauxlib, lua, to_jsstring, to_luastring } from "fengari";
+import lua from "fengari/src/lua.js";
+import defs from "fengari/src/defs.js";
+import lauxlib from "fengari/src/lauxlib.js";
 import baseLib from "fengari/src/lbaselib.js";
 import coroutineLib from "fengari/src/lcorolib.js";
 import mathLib from "fengari/src/lmathlib.js";
-import stringLib from "fengari/src/lstrlib.js";
-import tableLib from "fengari/src/ltablib.js";
 import utf8Lib from "fengari/src/lutf8lib.js";
 import { getDirectoryEntries, readFile, writeFile } from "./filesystem.js";
 import { allocatePower, formatStatus, repairSystem, scanSector } from "../game/engine.js";
 
 const INSTRUCTION_BUDGET = 100000;
 const HOOK_INTERVAL = 1000;
+const { to_jsstring, to_luastring } = defs;
 
 export function runLuaScript(source, shellState) {
   const output = [];
@@ -112,8 +113,6 @@ function openSafeLibraries(L) {
     ["_G", baseLib.luaopen_base],
     ["coroutine", coroutineLib.luaopen_coroutine],
     ["math", mathLib.luaopen_math],
-    ["string", stringLib.luaopen_string],
-    ["table", tableLib.luaopen_table],
     ["utf8", utf8Lib.luaopen_utf8],
   ];
 

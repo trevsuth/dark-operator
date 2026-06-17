@@ -1,5 +1,7 @@
 export function normalizePath(inputPath, cwd = "/") {
-  const rawPath = inputPath?.startsWith("/") ? inputPath : `${cwd}/${inputPath || ""}`;
+  const expandedPath =
+    inputPath === "~" ? "/home/operator" : inputPath?.startsWith("~/") ? `/home/operator/${inputPath.slice(2)}` : inputPath;
+  const rawPath = expandedPath?.startsWith("/") ? expandedPath : `${cwd}/${expandedPath || ""}`;
   const segments = rawPath.split("/");
   const resolved = [];
 

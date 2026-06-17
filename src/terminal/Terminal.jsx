@@ -67,6 +67,7 @@ export function Terminal() {
     const globalFileSystemChanged = result.nextState.fileSystem !== activePane.shellState.fileSystem;
     const globalScriptStateChanged = result.nextState.scriptState !== activePane.shellState.scriptState;
     const globalGameChanged = result.nextState.game !== activePane.shellState.game;
+    const globalAliasesChanged = result.nextState.aliases !== activePane.shellState.aliases;
 
     setPanes((current) =>
       current.map((pane) => {
@@ -76,6 +77,7 @@ export function Terminal() {
           fileSystem: globalFileSystemChanged ? result.nextState.fileSystem : shellState.fileSystem,
           scriptState: globalScriptStateChanged ? result.nextState.scriptState : shellState.scriptState,
           game: globalGameChanged ? result.nextState.game : shellState.game,
+          aliases: globalAliasesChanged ? result.nextState.aliases : shellState.aliases,
         };
 
         if (pane.id !== activePaneId) return { ...pane, shellState: syncedShellState };

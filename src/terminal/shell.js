@@ -1,3 +1,4 @@
+import { loadBashrcAliases } from "./aliases.js";
 import { fileSystem } from "./filesystem.js";
 import { parseCommand, splitPipeline } from "./parser.js";
 import { createGame } from "../game/state.js";
@@ -7,6 +8,7 @@ export const initialShellState = {
   host: "csv-simurgh",
   cwd: "/home/operator",
   fileSystem,
+  aliases: loadBashrcAliases(fileSystem, "operator"),
   game: createGame("simurgh-001"),
   scriptState: {},
   editor: null,
@@ -43,7 +45,7 @@ export function executeInput(input, state, registry) {
   let lastResult = null;
 
   for (const segment of pipeline) {
-    const parsed = parseCommand(segment);
+    const parsed = expandAlias(parseCommand(segment), nextState);
     const command = registry[parsed.command];
 
     if (!command) {
@@ -85,6 +87,25 @@ export function executeInput(input, state, registry) {
     nextState,
     entries: outputLines.length ? [inputEntry, { kind: "output", lines: outputLines }] : [inputEntry],
   };
+}
+
+function expandAlias(parsed, state, seen = new Set()) {
+  const value = state.aliases?.[parsed.command];
+  if (!value || seen.has(parsed.command)) return parsed;
+
+  seen.add(parsed.command);
+  const aliasParsed = parseCommand(value);
+  if (!aliasParsed.command) return parsed;
+
+  return expandAlias(
+    {
+      command: aliasParsed.command,
+      args: [...aliasParsed.args, ...parsed.args],
+      tokens: [...aliasParsed.tokens, ...parsed.args],
+    },
+    state,
+    seen,
+  );
 }
 
 function resultToLines(result) {

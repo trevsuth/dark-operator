@@ -1,5 +1,7 @@
+import { formatAlias, loadBashrcAliases, parseAliasLine } from "./aliases.js";
 import { getParentDirectory, listDirectory, readFile, resolveNode } from "./filesystem.js";
 import { runLuaScript } from "./luaRuntime.js";
+import { getManPage, listManPages, searchManPages } from "./manpages.js";
 import { basename, normalizePath } from "./path.js";
 import { executeGameCommand } from "../game/engine.js";
 
@@ -23,6 +25,77 @@ export function createCommandRegistry() {
     help: {
       summary: "show available commands",
       run: () => text(commandHelp(registry)),
+    },
+    alias: {
+      summary: "define or list command aliases",
+      run: ({ args, state }) => {
+        if (!args.length) {
+          const aliases = Object.entries(state.aliases || {}).sort(([a], [b]) => a.localeCompare(b));
+          return text(aliases.length ? aliases.map(([name, value]) => formatAlias(name, value)) : "");
+        }
+
+        const nextAliases = { ...(state.aliases || {}) };
+        const lines = [];
+
+        for (const arg of args) {
+          if (!arg.includes("=")) {
+            if (nextAliases[arg]) {
+              lines.push(formatAlias(arg, nextAliases[arg]));
+            } else {
+              lines.push(`alias: ${arg}: not found`);
+            }
+            continue;
+          }
+
+          const definition = parseAliasLine(`alias ${arg}`);
+          if (!definition) {
+            lines.push(`alias: ${arg}: invalid alias definition`);
+            continue;
+          }
+
+          nextAliases[definition.name] = definition.value;
+        }
+
+        return {
+          type: "state",
+          patch: { aliases: nextAliases },
+          lines,
+        };
+      },
+    },
+    man: {
+      summary: "display reference manual pages",
+      run: ({ args }) => {
+        if (!args.length) {
+          return text(["What manual page do you want?", `Available manual pages: ${listManPages().join(", ")}`]);
+        }
+
+        if (args[0] === "-k") {
+          const keyword = args.slice(1).join(" ").trim();
+          if (!keyword) return text("man: option requires an argument -- k");
+          const matches = searchManPages(keyword);
+          return text(matches.length ? matches : `${keyword}: nothing appropriate`);
+        }
+
+        const page = getManPage(args[0]);
+        return text(page || `No manual entry for ${args[0]}`);
+      },
+    },
+    source: {
+      summary: "read aliases from a shell file",
+      run: ({ args, state }) => {
+        const path = args[0] || "~/.bashrc";
+        if (path !== "~/.bashrc" && path !== ".bashrc" && path !== `/home/${state.user}/.bashrc`) {
+          return text(`source: ${path}: only .bashrc alias files are supported`);
+        }
+
+        const aliases = loadBashrcAliases(state.fileSystem, state.user);
+        return {
+          type: "state",
+          patch: { aliases },
+          lines: [`loaded ${Object.keys(aliases).length} aliases from /home/${state.user}/.bashrc`],
+        };
+      },
     },
     status: gameCommand("show ship status"),
     scan: gameCommand("scan the current sector"),

@@ -9,6 +9,11 @@ export const fileSystem = {
         operator: {
           type: "directory",
           children: {
+            ".bashrc": {
+              type: "file",
+              content:
+                "# CSV Simurgh operator shell aliases\n# Edit this file with vim, then run: source ~/.bashrc\n\nalias st='status'\nalias s='scan'\nalias m='map'\nalias l='logs'\nalias ll='ls'\nalias la='ls /archive'\nalias emergency='run emergency.lua'\n",
+            },
             "notes.txt": {
               type: "file",
               content:
