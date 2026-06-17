@@ -1,4 +1,5 @@
 import { basename, dirname, normalizePath } from "./path.js";
+import { createSystemManualTree } from "./systemManuals.js";
 import { createSystemFileTree } from "../game/repairSystems.js";
 
 export const fileSystem = {
@@ -45,6 +46,7 @@ export const fileSystem = {
         manuals: {
           type: "directory",
           children: {
+            ...createSystemManualTree().children,
             lua: {
               type: "directory",
               children: {

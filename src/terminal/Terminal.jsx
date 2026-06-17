@@ -26,6 +26,7 @@ export function Terminal() {
   const [panes, setPanes] = useState(() => [createPane(0)]);
   const [activePaneId, setActivePaneId] = useState(0);
   const [tmuxPrefix, setTmuxPrefix] = useState(false);
+  const [tmuxLayout, setTmuxLayout] = useState("vertical");
   const inputRef = useRef(null);
   const editorRef = useRef(null);
   const nextPaneIdRef = useRef(1);
@@ -154,7 +155,12 @@ export function Terminal() {
     setTmuxPrefix(false);
 
     if (event.key === "c") {
-      createTmuxPane();
+      createTmuxPane("vertical");
+      return true;
+    }
+
+    if (event.key === "C") {
+      createTmuxPane("horizontal");
       return true;
     }
 
@@ -184,9 +190,10 @@ export function Terminal() {
     return true;
   }
 
-  function createTmuxPane() {
+  function createTmuxPane(layout = "vertical") {
     const id = nextPaneIdRef.current;
     nextPaneIdRef.current += 1;
+    setTmuxLayout(layout);
     const nextPane = createPane(id, {
       ...activePane.shellState,
       editor: null,
@@ -375,7 +382,7 @@ export function Terminal() {
         </div>
       </header>
 
-      <div className="tmux-layout" style={{ "--pane-count": panes.length }}>
+      <div className={`tmux-layout ${tmuxLayout === "horizontal" ? "horizontal" : "vertical"}`} style={{ "--pane-count": panes.length }}>
         {panes.map((pane) => (
           <TerminalPane
             key={pane.id}
@@ -396,7 +403,7 @@ export function Terminal() {
         <div className="tmux-statusline">
           <span>{tmuxPrefix ? "PREFIX" : "tmux"}</span>
           <span>{panes.map((pane) => `[${pane.id}${pane.id === activePaneId ? "*" : ""}]`).join(" ")}</span>
-          <span>Ctrl-b c new | n/p switch | x close | 0-9 select</span>
+          <span>Ctrl-b c vertical | C horizontal | n/p switch | x close | 0-9 select</span>
         </div>
       ) : null}
     </section>
