@@ -14,7 +14,7 @@ export function executeGameCommand(command, args, game, context = {}) {
     case "logs":
       return { game, lines: game.logs.slice(-16) };
     case "map":
-      return { game, lines: formatMap(game) };
+      return { game, lines: formatMapCommand(game, args) };
     case "jump":
       return jumpSector(game, args[0]);
     case "repair":
@@ -388,6 +388,49 @@ function formatMap(game) {
     const links = game.visited.includes(id) || game.ship.location === id ? ` -> ${sector.links.join(", ")}` : "";
     return `${marker} ${id} ${name}${links}`;
   });
+}
+
+function formatMapCommand(game, args = []) {
+  if (!args.length) return formatMap(game);
+  if (args[0] === "-v" || args[0] === "--visual") return formatVisualMap(game);
+  return [`map: ${args[0]}: unknown option`, "usage: map [-v|--visual]"];
+}
+
+function formatVisualMap(game) {
+  const node = (id) => formatMapNode(game, id);
+  const link = (from, to, width = 7) => (isExploredLink(game, from, to) ? "-".repeat(width) : " ".repeat(width));
+  const vertical = (from, to) => (isExploredLink(game, from, to) ? "|" : " ");
+  const diagonalDown = (from, to) => (isExploredLink(game, from, to) ? "\\" : " ");
+  const diagonalUp = (from, to) => (isExploredLink(game, from, to) ? "/" : " ");
+
+  return [
+    "CSV SIMURGH SECTOR MAP",
+    "legend: * current  + visited  ? unvisited",
+    "",
+    `                 ${node("sector-02")} ${link("sector-02", "sector-04")} ${node("sector-04")} ${link("sector-04", "sector-06")} ${node("sector-06")}`,
+    `                    ${vertical("sector-02", "sector-01")}          ${vertical("sector-04", "sector-03")}          ${vertical("sector-06", "sector-05")}`,
+    `                    ${vertical("sector-02", "sector-01")}          ${vertical("sector-04", "sector-03")}          ${vertical("sector-06", "sector-05")}`,
+    `                 ${node("sector-01")} ${link("sector-01", "sector-03")} ${node("sector-03")} ${link("sector-03", "sector-05")} ${node("sector-05")}`,
+    `                              ${diagonalDown("sector-03", "sector-04")}           ${diagonalUp("sector-05", "sector-06")}`,
+    `                               ${diagonalDown("sector-03", "sector-04")}         ${diagonalUp("sector-05", "sector-06")}`,
+    "",
+    "known sectors:",
+    ...formatMap(game),
+  ];
+}
+
+function formatMapNode(game, id) {
+  const sector = sectorMap[id];
+  const marker = game.ship.location === id ? "*" : game.visited.includes(id) ? "+" : "?";
+  const number = id.replace("sector-", "");
+  const label = game.visited.includes(id) || game.ship.location === id ? sector.name : "unscanned";
+  return `[${marker}${number} ${truncate(label, 15).padEnd(15)}]`;
+}
+
+function isExploredLink(game, from, to) {
+  const connected = sectorMap[from].links.includes(to) || sectorMap[to].links.includes(from);
+  const explored = game.visited.includes(from) || game.visited.includes(to) || game.ship.location === from || game.ship.location === to;
+  return connected && explored;
 }
 
 function applyEffects(game, effects) {

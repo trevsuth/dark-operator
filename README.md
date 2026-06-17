@@ -49,6 +49,7 @@ status -v
 status reactor
 scan
 map
+map -v
 logs
 cat /archive/manuals/lua/01_variables.txt
 cat /archive/manuals/reactor/service_manual.txt
@@ -58,6 +59,109 @@ jump sector-02
 ```
 
 The shell also supports familiar utility commands such as `ls`, `cd`, `cat`, `grep`, `sed`, `awk`, `vim`, `lua`, `man`, `alias`, `source`, and `tmux`.
+
+## How To Play
+
+You are operating the CSV Simurgh through a terminal. Most actions are typed commands. Some commands only inspect information; others advance the ship cycle and may trigger events.
+
+Start each run by checking the ship:
+
+```bash
+status
+status -v
+logs
+```
+
+Use `status` to track hull, power, oxygen, fuel, heat, signal, environmental telemetry, system condition, and the current objective. Use `logs` to review recent events.
+
+Read ship documents like a normal filesystem:
+
+```bash
+ls /archive/manuals
+cat /ship/briefing.txt
+cat /archive/manuals/life_support/service_manual.txt
+man repair
+```
+
+Explore sectors with scans, maps, and jumps:
+
+```bash
+scan
+map
+map -v
+jump sector-02
+```
+
+`scan` advances the cycle and may recover archive fragments. `jump` moves only to adjacent sectors and costs fuel. The objective is to reach the beacon terminus after recovering enough archive context.
+
+### Win Conditions And Archive Fragments
+
+The current prototype has one win condition:
+
+```text
+Reach sector-06 and recover at least three archive fragments.
+```
+
+`sector-06` is the Beacon Terminus. You can reach it by following connected sectors shown by `map` or `map -v`, but arriving there is not enough by itself. The Simurgh also needs enough recovered archive context to reconstruct the beacon route.
+
+Archive fragments are short recovered records attached to specific sectors. They represent pieces of the ship's damaged memory: crew records, maintenance notes, signal residue, command indexes, and other partial historical data. They are discovered by running `scan` in sectors that contain recoverable archive data.
+
+In the current map, fragments can be found in:
+
+```text
+sector-02  Archive Spine
+sector-04  Dormant Habitat
+sector-05  Garden Vault
+sector-06  Beacon Terminus
+```
+
+You only need three fragments to satisfy the current objective. `status` shows progress as:
+
+```text
+archives recovered: 0/3
+```
+
+The run is lost if hull reaches `0`, oxygen reaches `0`, fuel reaches `0`, or heat reaches `100`.
+
+Repair systems by inspecting their files, editing bad artifacts, then validating the repair:
+
+```bash
+status reactor
+ls /ship/systems/reactor
+cat /ship/systems/reactor/faults.log
+vim /ship/systems/reactor/config.ini
+repair reactor
+```
+
+If `repair` reports active artifact faults, read the evidence path and correct the listed file. System manuals under `/archive/manuals/<system>` explain expected values and failure modes.
+
+Allocate power when resources are drifting badly:
+
+```bash
+power reactor 40
+power life_support 30
+power propulsion 12
+```
+
+Higher reactor allocation can recover power but raises heat. Life support allocation helps oxygen and atmosphere. Propulsion allocation supports heat rejection when it is at least `8`.
+
+Use Lua when a task becomes repetitive:
+
+```bash
+cat emergency.lua
+vim emergency.lua
+run emergency.lua
+```
+
+Lua scripts can read status, scan, repair, allocate power, and inspect virtual files. Start with `/archive/manuals/lua/01_variables.txt`.
+
+Use panes when you want status, logs, manuals, and scripts visible in separate terminals:
+
+```bash
+tmux
+```
+
+Then use `Ctrl-b c` for a vertical pane or `Ctrl-b C` for a horizontal pane.
 
 ## Ship Systems
 

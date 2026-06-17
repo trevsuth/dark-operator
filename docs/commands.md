@@ -33,6 +33,7 @@ Handlers currently return one of:
 | `awk` | Process columns | Supports basic `print` programs against stdin or files. |
 | `vim` | Edit a file | Opens a simplified Vim-style editor for an existing file or a new file in an existing directory. |
 | `lua` | Run a Lua script | Executes a Lua script file from the fake filesystem with sandboxed game APIs. |
+| `map` | Show known sectors | Prints the known sector graph. `map -v` renders the explored graph as an ASCII diagram. |
 | `tmux` | Start terminal multiplexer | Enters a tmux-style pane interface for multiple terminal contexts. |
 
 ## Tmux

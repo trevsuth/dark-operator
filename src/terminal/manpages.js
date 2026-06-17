@@ -171,12 +171,14 @@ const MAN_PAGES = {
     name: "map",
     section: "1",
     summary: "show known sectors",
-    synopsis: ["map"],
+    synopsis: ["map", "map -v", "map --visual"],
     description: [
       "map prints the Simurgh sector graph known to the operator. The current sector is marked with *, visited sectors are marked with +, and unknown sectors are marked with ?.",
+      "With -v or --visual, map renders the explored sector graph as an ASCII diagram. Unvisited sectors are shown without names until reached.",
       "Use map to choose legal jump destinations and to reason about routes toward the beacon terminus.",
     ],
-    examples: ["map", "scan", "jump sector-02"],
+    options: ["-v, --visual    render the explored map as an ASCII diagram"],
+    examples: ["map", "map -v", "scan", "jump sector-02"],
     seeAlso: ["jump(1)", "scan(1)", "status(1)"],
   },
   power: {
