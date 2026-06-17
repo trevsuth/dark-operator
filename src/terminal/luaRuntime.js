@@ -6,6 +6,7 @@ import stringLib from "fengari/src/lstrlib.js";
 import tableLib from "fengari/src/ltablib.js";
 import utf8Lib from "fengari/src/lutf8lib.js";
 import { getDirectoryEntries, readFile, writeFile } from "./filesystem.js";
+import { allocatePower, formatStatus, repairSystem, scanSector } from "../game/engine.js";
 
 const INSTRUCTION_BUDGET = 100000;
 const HOOK_INTERVAL = 1000;
@@ -13,6 +14,7 @@ const HOOK_INTERVAL = 1000;
 export function runLuaScript(source, shellState) {
   const output = [];
   let fileSystem = shellState.fileSystem;
+  let game = shellState.game;
   let scriptState = { ...shellState.scriptState };
   let instructionsLeft = INSTRUCTION_BUDGET;
 
@@ -22,6 +24,7 @@ export function runLuaScript(source, shellState) {
       ok: false,
       lines: ["lua: failed to create Lua state"],
       fileSystem,
+      game,
       scriptState,
     };
   }
@@ -58,6 +61,29 @@ export function runLuaScript(source, shellState) {
     },
     list: (path) => getDirectoryEntries(path || ".", shellState.cwd, fileSystem),
   });
+  installShipApi(L, output, {
+    status: () => game.ship,
+    logs: () => game.logs.slice(-16),
+    repair: (system) => {
+      const result = repairSystem(game, system);
+      game = result.game;
+      output.push(...result.lines);
+      return result.game.status === "active";
+    },
+    power: (system, amount) => {
+      const result = allocatePower(game, system, amount);
+      game = result.game;
+      output.push(...result.lines);
+      return !result.lines.some((line) => line.startsWith("[WARN]") || line.startsWith("power:"));
+    },
+    scan: () => {
+      const result = scanSector(game);
+      game = result.game;
+      output.push(...result.lines);
+      return true;
+    },
+    statusLines: () => formatStatus(game),
+  });
 
   const status = lauxlib.luaL_dostring(L, to_luastring(source));
   if (status !== lua.LUA_OK) {
@@ -67,6 +93,7 @@ export function runLuaScript(source, shellState) {
       ok: false,
       lines: [...output, `lua: ${error}`],
       fileSystem,
+      game,
       scriptState,
     };
   }
@@ -75,6 +102,7 @@ export function runLuaScript(source, shellState) {
     ok: true,
     lines: output,
     fileSystem,
+    game,
     scriptState,
   };
 }
@@ -181,6 +209,45 @@ function installFsApi(L, fsApi) {
   lua.lua_setglobal(L, to_luastring("fs", true));
 }
 
+function installShipApi(L, output, shipApi) {
+  lua.lua_createtable(L, 0, 6);
+
+  setFunction(L, "status", (state) => {
+    pushJsValue(state, shipApi.status());
+    return 1;
+  });
+
+  setFunction(L, "logs", (state) => {
+    pushJsValue(state, shipApi.logs());
+    return 1;
+  });
+
+  setFunction(L, "repair", (state) => {
+    const system = to_jsstring(lauxlib.luaL_checkstring(state, 1));
+    lua.lua_pushboolean(state, shipApi.repair(system) ? 1 : 0);
+    return 1;
+  });
+
+  setFunction(L, "power", (state) => {
+    const system = to_jsstring(lauxlib.luaL_checkstring(state, 1));
+    const amount = lauxlib.luaL_checknumber(state, 2);
+    lua.lua_pushboolean(state, shipApi.power(system, amount) ? 1 : 0);
+    return 1;
+  });
+
+  setFunction(L, "scan", (state) => {
+    lua.lua_pushboolean(state, shipApi.scan() ? 1 : 0);
+    return 1;
+  });
+
+  setFunction(L, "print_status", () => {
+    output.push(...shipApi.statusLines());
+    return 0;
+  });
+
+  lua.lua_setglobal(L, to_luastring("ship", true));
+}
+
 function setFunction(L, name, fn) {
   lua.lua_pushjsfunction(L, fn);
   lua.lua_setfield(L, -2, to_luastring(name, true));
@@ -208,6 +275,24 @@ function pushNilError(L, message) {
 function pushJsValue(L, value) {
   if (value === undefined || value === null) {
     lua.lua_pushnil(L);
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    lua.lua_createtable(L, value.length, 0);
+    value.forEach((item, index) => {
+      pushJsValue(L, item);
+      lua.lua_rawseti(L, -2, index + 1);
+    });
+    return;
+  }
+
+  if (typeof value === "object") {
+    lua.lua_createtable(L, 0, Object.keys(value).length);
+    for (const [key, item] of Object.entries(value)) {
+      pushJsValue(L, item);
+      lua.lua_setfield(L, -2, to_luastring(key, true));
+    }
     return;
   }
 

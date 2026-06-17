@@ -1,11 +1,13 @@
 import { fileSystem } from "./filesystem.js";
 import { parseCommand, splitPipeline } from "./parser.js";
+import { createGame } from "../game/state.js";
 
 export const initialShellState = {
-  user: "player",
-  host: "console-clone",
-  cwd: "/home/player",
+  user: "operator",
+  host: "csv-simurgh",
+  cwd: "/home/operator",
   fileSystem,
+  game: createGame("simurgh-001"),
   scriptState: {},
   editor: null,
   tmux: null,

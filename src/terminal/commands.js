@@ -1,6 +1,7 @@
 import { getParentDirectory, listDirectory, readFile, resolveNode } from "./filesystem.js";
 import { runLuaScript } from "./luaRuntime.js";
 import { basename, normalizePath } from "./path.js";
+import { executeGameCommand } from "../game/engine.js";
 
 function text(lines = []) {
   return { type: "output", lines: Array.isArray(lines) ? lines : [lines] };
@@ -23,6 +24,14 @@ export function createCommandRegistry() {
       summary: "show available commands",
       run: () => text(commandHelp(registry)),
     },
+    status: gameCommand("show ship status"),
+    scan: gameCommand("scan the current sector"),
+    logs: gameCommand("show recent ship events"),
+    map: gameCommand("show known sectors"),
+    jump: gameCommand("travel to an adjacent sector"),
+    repair: gameCommand("attempt system repair"),
+    power: gameCommand("allocate ship power"),
+    wait: gameCommand("advance one ship cycle"),
     clear: {
       summary: "clear terminal history",
       run: () => ({ type: "clear" }),
@@ -213,23 +222,11 @@ export function createCommandRegistry() {
     },
     lua: {
       summary: "run a Lua script",
-      run: ({ args, state }) => {
-        if (!args.length) return text("lua: missing script file");
-
-        const scriptPath = args[0];
-        const script = readFile(scriptPath, state.cwd, state.fileSystem);
-        if (!script.ok) return text(script.error.replace(/^cat:/, "lua:"));
-
-        const result = runLuaScript(script.content, state);
-        return {
-          type: "state",
-          patch: {
-            fileSystem: result.fileSystem,
-            scriptState: result.scriptState,
-          },
-          lines: result.lines,
-        };
-      },
+      run: runLuaCommand("lua"),
+    },
+    run: {
+      summary: "run a Lua automation script",
+      run: runLuaCommand("run"),
     },
     tmux: {
       summary: "start terminal multiplexer",
@@ -247,6 +244,41 @@ export function createCommandRegistry() {
   };
 
   return registry;
+}
+
+function gameCommand(summary) {
+  return {
+    summary,
+    run: ({ parsed, args, state }) => {
+      const result = executeGameCommand(parsed.command, args, state.game);
+      return {
+        type: "state",
+        patch: { game: result.game },
+        lines: result.lines,
+      };
+    },
+  };
+}
+
+function runLuaCommand(commandName) {
+  return ({ args, state }) => {
+    if (!args.length) return text(`${commandName}: missing script file`);
+
+    const scriptPath = args[0];
+    const script = readFile(scriptPath, state.cwd, state.fileSystem);
+    if (!script.ok) return text(script.error.replace(/^cat:/, `${commandName}:`));
+
+    const result = runLuaScript(script.content, state);
+    return {
+      type: "state",
+      patch: {
+        fileSystem: result.fileSystem,
+        scriptState: result.scriptState,
+        game: result.game,
+      },
+      lines: result.lines,
+    };
+  };
 }
 
 function parseGrepArgs(args) {

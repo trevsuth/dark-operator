@@ -5,8 +5,8 @@ import { writeFile } from "./filesystem.js";
 import { executeInput, formatPrompt, initialShellState } from "./shell.js";
 
 const welcomeLines = [
-  "Console Clone virtual bash",
-  "Type 'help' for available commands.",
+  "CSV Simurgh emergency console",
+  "Type 'status', 'scan', 'map', or 'help'.",
 ];
 
 function createPane(id, shellState = initialShellState) {
@@ -66,6 +66,7 @@ export function Terminal() {
 
     const globalFileSystemChanged = result.nextState.fileSystem !== activePane.shellState.fileSystem;
     const globalScriptStateChanged = result.nextState.scriptState !== activePane.shellState.scriptState;
+    const globalGameChanged = result.nextState.game !== activePane.shellState.game;
 
     setPanes((current) =>
       current.map((pane) => {
@@ -74,6 +75,7 @@ export function Terminal() {
           ...shellState,
           fileSystem: globalFileSystemChanged ? result.nextState.fileSystem : shellState.fileSystem,
           scriptState: globalScriptStateChanged ? result.nextState.scriptState : shellState.scriptState,
+          game: globalGameChanged ? result.nextState.game : shellState.game,
         };
 
         if (pane.id !== activePaneId) return { ...pane, shellState: syncedShellState };
