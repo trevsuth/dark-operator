@@ -31,6 +31,7 @@ export function executeGameCommand(command, args, game, context = {}) {
 function formatStatusCommand(game, args = [], context = {}) {
   if (!args.length) return formatStatus(game);
   if (args[0] === "-a" || args[0] === "--all") return formatAllSystemStatus(game, context);
+  if (args[0] === "-v" || args[0] === "--visual") return formatVisualStatus(game, context);
 
   const system = normalizeSystemName(args[0]);
   if (!SYSTEMS.includes(system)) {
@@ -207,6 +208,35 @@ export function formatStatus(game) {
     `systems: ${SYSTEMS.map((system) => `${system}=${game.systems[system]}`).join("  ")}`,
     `power grid: ${SYSTEMS.map((system) => `${system}=${game.power[system]}`).join("  ")}`,
     `archives recovered: ${game.discoveredFragments.length}/3`,
+  ];
+}
+
+function formatVisualStatus(game, context = {}) {
+  const sector = getCurrentSector(game);
+  const systemRows = SYSTEMS.map((system) => {
+    const artifactFaults = getArtifactFaults(system, context).length;
+    const state = artifactFaults ? "fault" : game.systems[system];
+    return `${system.padEnd(12)} ${state.padEnd(9)} ${miniBar(game.power[system], 60)} ${String(game.power[system]).padStart(2)}`;
+  });
+  const recentLogs = game.logs.slice(-5).map((line) => truncate(line, 72));
+
+  return [
+    "+----------------------------- CSV SIMURGH :: STATUS -----------------------------+",
+    `| seed ${game.seed.padEnd(14)} run ${game.status.padEnd(7)} turn ${String(game.ship.turn).padStart(4)}  loc ${truncate(`${game.ship.location} ${sector.name}`, 28).padEnd(28)} |`,
+    "+-------------------------------- RESOURCES --------------------------------------+",
+    `| HULL   ${visualBar(game.ship.hull, 100, 28)} ${pct(game.ship.hull)}  POWER ${visualBar(game.ship.power, 100, 18)} ${pct(game.ship.power)} |`,
+    `| OXYGEN ${visualBar(game.ship.oxygen, 100, 28)} ${pct(game.ship.oxygen)}  FUEL  ${visualBar(game.ship.fuel, 100, 18)} ${pct(game.ship.fuel)} |`,
+    `| HEAT   ${visualBar(game.ship.heat, 100, 28, true)} ${pct(game.ship.heat)}  SIGNAL${visualBar(game.ship.signal, 100, 18)} ${pct(game.ship.signal)} |`,
+    "+------------------------------ ENVIRONMENT --------------------------------------+",
+    `| atm O2 ${formatFixed(game.environment.oxygenPercent, 1).padStart(4)}%  N2 ${formatFixed(game.environment.nitrogenPercent, 1).padStart(4)}%  trace ${formatFixed(game.environment.tracePercent, 1).padStart(3)}%     pressure ${formatFixed(game.environment.pressureKpa, 1).padStart(5)} kPa |`,
+    `| temp ${formatFixed(game.environment.temperatureC, 1).padStart(5)} C   humidity ${String(Math.round(game.environment.humidity)).padStart(2)}%   CO2 ${String(Math.round(game.environment.co2Ppm)).padStart(4)} ppm   partic ${String(Math.round(game.environment.particulate)).padStart(3)} ug/m3 |`,
+    "+------------------------------- SYSTEMS -----------------------------------------+",
+    ...systemRows.map((row) => `| ${row.padEnd(78)} |`),
+    "+------------------------------- OBJECTIVE ---------------------------------------+",
+    `| archive fragments ${String(game.discoveredFragments.length).padStart(1)}/3  route links ${sector.links.join(", ").padEnd(26)} objective ${truncate(game.objective, 24).padEnd(24)} |`,
+    "+--------------------------------- LOGS ------------------------------------------+",
+    ...(recentLogs.length ? recentLogs : ["no recent logs"]).map((line) => `| ${line.padEnd(78)} |`),
+    "+---------------------------------------------------------------------------------+",
   ];
 }
 
@@ -429,6 +459,30 @@ function evaluateTerminalState(game) {
 function bar(value) {
   const filled = Math.max(0, Math.min(10, Math.round(value / 10)));
   return `[${"#".repeat(filled)}${".".repeat(10 - filled)}]`;
+}
+
+function visualBar(value, max, width, invert = false) {
+  const normalized = clamp(value / max, 0, 1);
+  const filled = Math.round(normalized * width);
+  const char = invert ? "!" : "#";
+  return `[${char.repeat(filled)}${"-".repeat(width - filled)}]`;
+}
+
+function miniBar(value, max) {
+  const width = 12;
+  const filled = Math.round(clamp(value / max, 0, 1) * width);
+  return `[${"#".repeat(filled)}${"-".repeat(width - filled)}]`;
+}
+
+function pct(value) {
+  return `${String(Math.round(value)).padStart(3)}%`;
+}
+
+function truncate(value, width) {
+  const text = String(value);
+  if (text.length <= width) return text;
+  if (width <= 1) return text.slice(0, width);
+  return `${text.slice(0, width - 1)}~`;
 }
 
 function normalizeSystemName(value) {
