@@ -73,16 +73,18 @@ All ship resources are clamped from `0` to `100`.
 
 The event deck applies direct resource deltas. Events are shuffled by seed at run creation and applied every second cycle.
 
+Events are classified as `mild`, `moderate`, or `severe`.
+
 Current event examples:
 
-| Event | Direct effects |
-| --- | --- |
-| Micrometeor Shear | `hull -7`, `heat +3` |
-| Pressure Variance | `oxygen -8` |
-| Reactor Instability | `power -6`, `heat +8` |
-| Archive Corruption | `signal +4` |
-| Quiet Cycle | `hull +1`, `heat -2` |
-| Unknown Carrier | `signal +8` |
+| Severity | Event example | Direct effects |
+| --- | --- | --- |
+| `mild` | Quiet Cycle | `hull +1`, `heat -2` |
+| `mild` | Unknown Carrier | `signal +8` |
+| `moderate` | Micrometeor Shear | `hull -7`, `heat +3` |
+| `moderate` | Pressure Variance | `oxygen -8` |
+| `severe` | Reactor Surge | `power -10`, `heat +14` |
+| `severe` | Grid Collapse | `power -16`, `signal -5` |
 
 Event effects also feed into environmental drift. Oxygen loss lowers pressure and oxygen fraction. Heat events increase ambient temperature. Hull damage increases particulate load.
 

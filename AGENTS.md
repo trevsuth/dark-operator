@@ -396,7 +396,7 @@ type GameEvent = {
   id: string;
   title: string;
   description: string;
-  severity: "low" | "medium" | "high";
+  severity: "mild" | "moderate" | "severe";
   effects: Partial<ShipState>;
 };
 ```
@@ -415,6 +415,12 @@ Possible events:
 * impossible astronomical readings
 
 Events should scale with ship condition and progression.
+
+The event deck should contain at least thirty possible events. Classify them as:
+
+* `mild`: small drift, minor recovery, weak signal, or contained anomalies
+* `moderate`: meaningful resource loss, useful recovery, or multi-resource stress
+* `severe`: dangerous multi-system impacts or large single-resource failures
 
 ---
 

@@ -2,7 +2,7 @@
 
 This document proposes a deeper replacement for the current `repair SYSTEM` command. The goal is to make each repair feel like terminal investigation: inspect files, read logs, compare configuration, run diagnostics, edit small artifacts, and then validate the fix.
 
-For the current step-based system states, gradual resource drift, and cross-system coupling formulas, see `docs/simulation.md`.
+For the current step-based system states, gradual resource drift, and cross-system coupling formulas, see `simulation.md`.
 
 The current ship systems are:
 
