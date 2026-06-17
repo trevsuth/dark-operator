@@ -323,7 +323,7 @@ function gameCommand(summary) {
   return {
     summary,
     run: ({ parsed, args, state }) => {
-      const result = executeGameCommand(parsed.command, args, state.game);
+      const result = executeGameCommand(parsed.command, args, state.game, { fileSystem: state.fileSystem });
       return {
         type: "state",
         patch: { game: result.game },

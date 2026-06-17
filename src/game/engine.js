@@ -1,13 +1,14 @@
 import { eventDeck } from "./events.js";
 import { sectorMap } from "./map.js";
+import { analyzeSystemFaults, getSystemArtifactPaths, getSystemRoot } from "./repairSystems.js";
 import { appendLog, cloneGame, formatSystem, getCurrentSector, getStoryFragment } from "./state.js";
 
 const SYSTEMS = ["reactor", "life_support", "sensors", "archives", "propulsion"];
 
-export function executeGameCommand(command, args, game) {
+export function executeGameCommand(command, args, game, context = {}) {
   switch (command) {
     case "status":
-      return { game, lines: formatStatus(game) };
+      return { game, lines: formatStatusCommand(game, args, context) };
     case "scan":
       return scanSector(game);
     case "logs":
@@ -17,7 +18,7 @@ export function executeGameCommand(command, args, game) {
     case "jump":
       return jumpSector(game, args[0]);
     case "repair":
-      return repairSystem(game, args[0]);
+      return repairSystem(game, args[0], context);
     case "power":
       return allocatePower(game, args[0], Number(args[1]));
     case "wait":
@@ -25,6 +26,18 @@ export function executeGameCommand(command, args, game) {
     default:
       return { game, lines: [`${command}: no game handler`] };
   }
+}
+
+function formatStatusCommand(game, args = [], context = {}) {
+  if (!args.length) return formatStatus(game);
+  if (args[0] === "-a" || args[0] === "--all") return formatAllSystemStatus(game, context);
+
+  const system = normalizeSystemName(args[0]);
+  if (!SYSTEMS.includes(system)) {
+    return [`status: ${args[0]}: unknown system`, `valid systems: ${SYSTEMS.join(", ")}`];
+  }
+
+  return formatSystemDetail(game, system, context);
 }
 
 export function advanceTurn(game, reason = "Ship cycle advanced.") {
@@ -41,6 +54,7 @@ export function advanceTurn(game, reason = "Ship cycle advanced.") {
   next.ship.oxygen = clamp(next.ship.oxygen + Math.floor((lifeSupportPower - 24) / 7) - 1, 0, 100);
   next.ship.heat = clamp(next.ship.heat + Math.floor((reactorPower - 28) / 9) - (next.power.propulsion < 8 ? 0 : 1), 0, 100);
   next.ship.signal = clamp(next.ship.signal + Math.floor(sensorPower / 15), 0, 100);
+  next.environment = advanceEnvironment(next);
 
   const lines = [`[CYCLE ${next.ship.turn}] ${reason}`];
   next = appendLog(next, `[CYCLE ${next.ship.turn}] ${reason}`);
@@ -108,12 +122,30 @@ export function jumpSector(game, destination) {
   return { game: cycle.game, lines: [...lines, ...cycle.lines] };
 }
 
-export function repairSystem(game, system) {
+export function repairSystem(game, system, context = {}) {
   if (!system) return { game, lines: [`repair: missing system (${SYSTEMS.join(", ")})`] };
+  system = normalizeSystemName(system);
   if (!SYSTEMS.includes(system)) return { game, lines: [`repair: ${system}: unknown system`] };
   if (game.status !== "active") return { game, lines: [`Run already ${game.status}.`] };
 
   let next = cloneGame(game);
+  const faults = getArtifactFaults(system, context);
+  if (faults.length) {
+    next.systems[system] = next.systems[system] === "nominal" ? "unstable" : next.systems[system];
+    return {
+      game: next,
+      lines: [
+        `[REPAIR] ${formatSystem(system)} validation failed.`,
+        `active artifact faults: ${faults.length}`,
+        ...faults.flatMap((fault) => [
+          `- ${fault.title}`,
+          `  evidence: ${fault.file.replace("SYSTEM", system)}`,
+          `  repair: ${fault.repair}`,
+        ]),
+      ],
+    };
+  }
+
   const current = next.systems[system];
   if (current === "nominal") return { game, lines: [`[INFO] ${formatSystem(system)} already nominal.`] };
 
@@ -122,7 +154,7 @@ export function repairSystem(game, system) {
 
   next.ship.power = clamp(next.ship.power - cost, 0, 100);
   next.systems[system] = current === "damaged" || current === "corrupted" ? "unstable" : "nominal";
-  const line = `[REPAIR] ${formatSystem(system)} improved to ${next.systems[system]}.`;
+  const line = `[REPAIR] ${formatSystem(system)} artifact validation passed; state improved to ${next.systems[system]}.`;
   next = appendLog(next, line);
 
   const cycle = advanceTurn(next, `${formatSystem(system)} repair routine executed.`);
@@ -164,11 +196,160 @@ export function formatStatus(game) {
     `heat:   ${bar(100 - game.ship.heat)} ${game.ship.heat}`,
     `signal: ${bar(game.ship.signal)} ${game.ship.signal}`,
     "",
+    "environment:",
+    `  atmosphere: O2 ${formatFixed(game.environment.oxygenPercent, 1)}%  N2 ${formatFixed(game.environment.nitrogenPercent, 1)}%  trace ${formatFixed(game.environment.tracePercent, 1)}%`,
+    `  pressure:   ${formatFixed(game.environment.pressureKpa, 1)} kPa`,
+    `  ambient:    ${formatFixed(game.environment.temperatureC, 1)} C`,
+    `  humidity:   ${Math.round(game.environment.humidity)}%`,
+    `  co2:        ${Math.round(game.environment.co2Ppm)} ppm`,
+    `  partic.:    ${Math.round(game.environment.particulate)} ug/m3`,
+    "",
     `systems: ${SYSTEMS.map((system) => `${system}=${game.systems[system]}`).join("  ")}`,
     `power grid: ${SYSTEMS.map((system) => `${system}=${game.power[system]}`).join("  ")}`,
     `archives recovered: ${game.discoveredFragments.length}/3`,
   ];
 }
+
+function formatAllSystemStatus(game, context = {}) {
+  return SYSTEMS.flatMap((system, index) => {
+    const lines = formatSystemDetail(game, system, context);
+    return index === 0 ? lines : ["", ...lines];
+  });
+}
+
+function formatSystemDetail(game, system, context = {}) {
+  const state = game.systems[system];
+  const allocation = game.power[system];
+  const profile = SYSTEM_PROFILES[system];
+  const artifactFaults = getArtifactFaults(system, context);
+  const lines = [
+    `CSV SIMURGH SYSTEM STATUS: ${system.toUpperCase()}`,
+    `state:       ${artifactFaults.length && state === "nominal" ? "unstable (artifact fault)" : state}`,
+    `allocation:  ${allocation}/100 grid units`,
+    `priority:    ${profile.priority}`,
+    `location:    ${profile.location}`,
+    `function:    ${profile.function}`,
+    `artifacts:   ${getSystemRoot(system)}`,
+    "",
+    "readouts:",
+    ...profile.readouts(game).map(([label, value]) => `  ${label.padEnd(16)} ${value}`),
+    "",
+    "diagnostics:",
+    ...profile.diagnostics(game).map((line) => `  ${line}`),
+    ...formatArtifactDiagnostics(system, artifactFaults),
+  ];
+
+  return lines;
+}
+
+function getArtifactFaults(system, context) {
+  return context.fileSystem ? analyzeSystemFaults(system, context.fileSystem) : [];
+}
+
+function formatArtifactDiagnostics(system, faults) {
+  if (!faults.length) {
+    return [`  artifact validation clean. Inspect ${getSystemRoot(system)} for baseline files.`];
+  }
+
+  return [
+    `  artifact validation reports ${faults.length} active issue${faults.length === 1 ? "" : "s"}.`,
+    ...faults.flatMap((fault) => [
+      `  - ${fault.title}`,
+      `    evidence: ${fault.file.replace("SYSTEM", system)}`,
+      `    repair: ${fault.repair}`,
+    ]),
+    `  run repair ${system} after correcting the listed files.`,
+  ];
+}
+
+const SYSTEM_PROFILES = {
+  reactor: {
+    priority: "primary power and thermal risk",
+    location: "aft core pressure bay",
+    function: "maintains electrical reserves for shipboard systems",
+    readouts: (game) => [
+      ["grid output", `${game.ship.power}/100 reserve`],
+      ["allocation", `${game.power.reactor}/60 local cap`],
+      ["core heat", `${game.ship.heat}/100 load`],
+      ["thermal trend", trendLabel(Math.floor((game.power.reactor - 28) / 9) - (game.power.propulsion < 8 ? 0 : 1))],
+      ["ambient coupling", `${formatFixed(game.environment.temperatureC, 1)} C compartment bleed`],
+    ],
+    diagnostics: (game) => [
+      systemStateLine(game, "reactor"),
+      game.power.reactor < 30 ? "reactor allocation is below reserve-positive output." : "reactor allocation is sustaining reserve charge.",
+      game.ship.heat > 70 ? "thermal margin is poor; reduce reactor allocation or improve heat rejection." : "thermal margin remains within emergency operating range.",
+    ],
+  },
+  life_support: {
+    priority: "habitable atmosphere",
+    location: "loop B pressure and scrubber manifold",
+    function: "regulates oxygen, pressure, humidity, and CO2 removal",
+    readouts: (game) => [
+      ["ship oxygen", `${game.ship.oxygen}/100 reserve`],
+      ["o2 fraction", `${formatFixed(game.environment.oxygenPercent, 1)}%`],
+      ["pressure", `${formatFixed(game.environment.pressureKpa, 1)} kPa`],
+      ["humidity", `${Math.round(game.environment.humidity)}%`],
+      ["co2", `${Math.round(game.environment.co2Ppm)} ppm`],
+    ],
+    diagnostics: (game) => [
+      systemStateLine(game, "life_support"),
+      game.environment.pressureKpa < 90 ? "pressure is below nominal habitat band." : "pressure is acceptable for operator compartments.",
+      game.environment.co2Ppm > 1200 ? "CO2 scrubber load is elevated." : "CO2 remains below emergency threshold.",
+      game.power.life_support < 24 ? "life support allocation will allow oxygen reserve to decay." : "life support allocation is sufficient for slow atmospheric correction.",
+    ],
+  },
+  sensors: {
+    priority: "navigation and anomaly detection",
+    location: "forward mast, hull lidar, archive correlation bus",
+    function: "builds sector maps and resolves weak signals",
+    readouts: (game) => [
+      ["signal", `${game.ship.signal}/100 processed`],
+      ["allocation", `${game.power.sensors}/60 local cap`],
+      ["sector bias", `${getCurrentSector(game).signal} local signal`],
+      ["known sectors", `${game.visited.length}/${Object.keys(sectorMap).length}`],
+      ["scan gain", `+${Math.floor(game.power.sensors / 15)} signal/cycle`],
+    ],
+    diagnostics: (game) => [
+      systemStateLine(game, "sensors"),
+      game.systems.sensors === "unstable" ? "sensor returns may be delayed or under-resolved." : "sensor bus timing is stable.",
+      game.power.sensors < 15 ? "allocation is below baseline sweep rate." : "allocation supports continued map refinement.",
+    ],
+  },
+  archives: {
+    priority: "historical recovery and system documentation",
+    location: "central archive spine",
+    function: "stores manuals, crew records, command indexes, and recovered fragments",
+    readouts: (game) => [
+      ["fragments", `${game.discoveredFragments.length}/3 objective fragments`],
+      ["allocation", `${game.power.archives}/60 local cap`],
+      ["particulate", `${Math.round(game.environment.particulate)} ug/m3`],
+      ["integrity", archiveIntegrity(game)],
+      ["manual path", "/archive/manuals/lua"],
+    ],
+    diagnostics: (game) => [
+      systemStateLine(game, "archives"),
+      game.systems.archives === "corrupted" ? "archive index corruption is actively increasing dust and recovery errors." : "archive index can service operator document requests.",
+      game.discoveredFragments.length >= 3 ? "objective archive threshold met." : "additional sector scans are required for archive reconstruction.",
+    ],
+  },
+  propulsion: {
+    priority: "sector transfer and heat rejection support",
+    location: "spine drive truss and maneuvering reserves",
+    function: "executes sector jumps and supports radiator orientation",
+    readouts: (game) => [
+      ["fuel", `${game.ship.fuel}/100 reserve`],
+      ["allocation", `${game.power.propulsion}/60 local cap`],
+      ["jump cost", "8 fuel"],
+      ["current sector", game.ship.location],
+      ["reachable", getCurrentSector(game).links.join(", ")],
+    ],
+    diagnostics: (game) => [
+      systemStateLine(game, "propulsion"),
+      game.ship.fuel < 24 ? "fuel reserve allows fewer than three standard jumps." : "fuel reserve supports continued sector exploration.",
+      game.power.propulsion < 8 ? "radiator orientation support is low; reactor heat rejection is reduced." : "propulsion support is adequate for radiator orientation.",
+    ],
+  },
+};
 
 function formatMap(game) {
   return Object.entries(sectorMap).map(([id, sector]) => {
@@ -182,9 +363,42 @@ function formatMap(game) {
 function applyEffects(game, effects) {
   const next = cloneGame(game);
   for (const [key, delta] of Object.entries(effects)) {
-    next.ship[key] = clamp(next.ship[key] + delta, 0, 100);
+    if (key in next.ship) next.ship[key] = clamp(next.ship[key] + delta, 0, 100);
   }
+  next.environment = advanceEnvironment(next, effects);
   return next;
+}
+
+function advanceEnvironment(game, effects = {}) {
+  const lifeSupportPower = game.power.life_support;
+  const archivePower = game.power.archives;
+  const oxygenStress = (70 - game.ship.oxygen) / 70;
+  const heatStress = game.ship.heat / 100;
+  const leakPenalty = game.systems.life_support === "damaged" ? 1.2 : game.systems.life_support === "unstable" ? 0.5 : 0;
+  const archiveDust = game.systems.archives === "corrupted" ? 1.4 : game.systems.archives === "unstable" ? 0.6 : 0;
+  const oxygenEffect = effects.oxygen || 0;
+  const heatEffect = effects.heat || 0;
+
+  const environment = game.environment;
+  const pressureDelta = (lifeSupportPower - 25) * 0.03 - leakPenalty + Math.min(0, oxygenEffect) * 0.08;
+  const oxygenPercentDelta = (lifeSupportPower - 24) * 0.012 - Math.max(0, oxygenStress) * 0.08 + oxygenEffect * 0.015;
+  const humidityDelta = (lifeSupportPower - 24) * 0.06 - heatStress * 0.5 - leakPenalty * 0.7;
+  const temperatureDelta = (game.ship.heat - 22) * 0.018 + heatEffect * 0.08 - (game.power.life_support - 25) * 0.01;
+  const co2Delta = 18 - (lifeSupportPower - 20) * 1.8 + leakPenalty * 10;
+  const particulateDelta = archiveDust - (archivePower - 15) * 0.05 + (effects.hull && effects.hull < 0 ? Math.abs(effects.hull) * 0.35 : 0);
+  const oxygenPercent = clampFloat(environment.oxygenPercent + oxygenPercentDelta, 12, 23.5);
+  const tracePercent = clampFloat(environment.tracePercent + Math.max(0, environment.co2Ppm - 1000) / 100000, 0.7, 3.5);
+
+  return {
+    pressureKpa: clampFloat(environment.pressureKpa + pressureDelta, 45, 106),
+    temperatureC: clampFloat(environment.temperatureC + temperatureDelta, -8, 48),
+    humidity: clampFloat(environment.humidity + humidityDelta, 8, 82),
+    oxygenPercent,
+    nitrogenPercent: clampFloat(100 - oxygenPercent - tracePercent, 72, 82),
+    co2Ppm: clampFloat(environment.co2Ppm + co2Delta, 260, 6500),
+    tracePercent,
+    particulate: clampFloat(environment.particulate + particulateDelta, 1, 180),
+  };
 }
 
 function evaluateTerminalState(game) {
@@ -217,6 +431,42 @@ function bar(value) {
   return `[${"#".repeat(filled)}${".".repeat(10 - filled)}]`;
 }
 
+function normalizeSystemName(value) {
+  return String(value || "").toLowerCase().replaceAll("-", "_");
+}
+
+function systemStateLine(game, system) {
+  const state = game.systems[system];
+  if (state === "nominal") return `${formatSystem(system)} reports nominal emergency operation.`;
+  if (state === "unstable") return `${formatSystem(system)} is unstable; repair can restore nominal operation.`;
+  if (state === "degraded") return `${formatSystem(system)} is degraded; output is below historical baseline.`;
+  if (state === "damaged") return `${formatSystem(system)} is damaged; reserve loss is likely without repair.`;
+  if (state === "corrupted") return `${formatSystem(system)} index is corrupted; recovered data may be incomplete.`;
+  return `${formatSystem(system)} state is ${state}.`;
+}
+
+function trendLabel(value) {
+  if (value > 0) return `rising +${value}/cycle`;
+  if (value < 0) return `falling ${value}/cycle`;
+  return "stable";
+}
+
+function archiveIntegrity(game) {
+  const state = game.systems.archives;
+  if (state === "nominal") return "82% reconstructed";
+  if (state === "unstable") return "61% reconstructed";
+  if (state === "corrupted") return "39% reconstructed";
+  return "unverified";
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function clampFloat(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function formatFixed(value, digits) {
+  return Number(value).toFixed(digits);
 }

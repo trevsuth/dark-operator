@@ -3,6 +3,17 @@ import { sectorMap } from "./map.js";
 import { createRng, pick } from "./random.js";
 import { storyFragments } from "./story.js";
 
+export const defaultEnvironment = {
+  pressureKpa: 99.1,
+  temperatureC: 21.6,
+  humidity: 41,
+  oxygenPercent: 20.8,
+  nitrogenPercent: 78.1,
+  co2Ppm: 610,
+  tracePercent: 1.1,
+  particulate: 7,
+};
+
 export function createGame(seed = "simurgh-001") {
   const rng = createRng(seed);
   const defect = pick(rng, ["life_support", "reactor", "sensors", "archives"]);
@@ -26,6 +37,16 @@ export function createGame(seed = "simurgh-001") {
       signal: 0,
       turn: 0,
       location: "sector-01",
+    },
+    environment: {
+      ...defaultEnvironment,
+      pressureKpa: defect === "life_support" ? 92.4 : defaultEnvironment.pressureKpa,
+      temperatureC: defect === "reactor" ? 24.8 : defaultEnvironment.temperatureC,
+      humidity: defect === "life_support" ? 28 : defaultEnvironment.humidity,
+      oxygenPercent: defect === "life_support" ? 19.2 : defaultEnvironment.oxygenPercent,
+      nitrogenPercent: defect === "life_support" ? 79.7 : defaultEnvironment.nitrogenPercent,
+      co2Ppm: defect === "life_support" ? 920 : defaultEnvironment.co2Ppm,
+      particulate: defect === "archives" ? 18 : defaultEnvironment.particulate,
     },
     systems: {
       reactor: defect === "reactor" ? "degraded" : "nominal",
@@ -55,6 +76,7 @@ export function cloneGame(game) {
   return {
     ...game,
     ship: { ...game.ship },
+    environment: { ...defaultEnvironment, ...game.environment },
     systems: { ...game.systems },
     power: { ...game.power },
     visited: [...game.visited],

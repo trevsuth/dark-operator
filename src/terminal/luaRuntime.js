@@ -63,10 +63,10 @@ export function runLuaScript(source, shellState) {
     list: (path) => getDirectoryEntries(path || ".", shellState.cwd, fileSystem),
   });
   installShipApi(L, output, {
-    status: () => game.ship,
+    status: () => ({ ...game.ship, environment: game.environment }),
     logs: () => game.logs.slice(-16),
     repair: (system) => {
-      const result = repairSystem(game, system);
+      const result = repairSystem(game, system, { fileSystem });
       game = result.game;
       output.push(...result.lines);
       return result.game.status === "active";

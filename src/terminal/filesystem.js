@@ -1,4 +1,5 @@
 import { basename, dirname, normalizePath } from "./path.js";
+import { createSystemFileTree } from "../game/repairSystems.js";
 
 export const fileSystem = {
   type: "directory",
@@ -94,8 +95,9 @@ export const fileSystem = {
         "systems.txt": {
           type: "file",
           content:
-            "Tracked systems: reactor, life_support, sensors, archives, propulsion.\nTracked resources: hull, power, oxygen, fuel, heat, signal.\nUse status for live telemetry.",
+            "Tracked systems: reactor, life_support, sensors, archives, propulsion.\nTracked resources: hull, power, oxygen, fuel, heat, signal.\nEnvironmental telemetry: pressure, ambient temperature, humidity, atmosphere composition, CO2, particulate load.\nSystem artifacts live under /ship/systems/<system>.\nUse status for live telemetry and status <system> for repair diagnostics.",
         },
+        systems: createSystemFileTree(),
       },
     },
     var: {

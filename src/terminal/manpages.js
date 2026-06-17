@@ -203,13 +203,15 @@ const MAN_PAGES = {
   repair: {
     name: "repair",
     section: "1",
-    summary: "attempt system repair",
+    summary: "validate and apply system repairs",
     synopsis: ["repair SYSTEM"],
     description: [
-      "repair spends ship power to improve a damaged or unstable system. Valid systems are reactor, life_support, sensors, archives, and propulsion.",
-      "A repaired system may become unstable before becoming nominal. Repair attempts advance the ship cycle.",
+      "repair validates the artifact files for a ship system and applies the repair only when known faults have been corrected.",
+      "Valid systems are reactor, life_support, sensors, archives, and propulsion. Each system has logs, configuration files, diagnostics, and data tables under /ship/systems/SYSTEM.",
+      "If files still match a known fault signature, repair reports the evidence path and the required correction instead of improving system state.",
+      "A successful repair spends ship power, improves system state, and advances the ship cycle.",
     ],
-    examples: ["repair life_support", "repair sensors", "status"],
+    examples: ["status sensors", "cat /ship/systems/sensors/faults.log", "vim /ship/systems/sensors/arrays.tsv", "repair sensors"],
     seeAlso: ["status(1)", "power(1)", "logs(1)"],
   },
   run: {
@@ -264,12 +266,15 @@ const MAN_PAGES = {
     name: "status",
     section: "1",
     summary: "display current ship telemetry",
-    synopsis: ["status"],
+    synopsis: ["status", "status SYSTEM", "status -a", "status --all"],
     description: [
-      "status prints the current run seed, objective, run state, turn, location, resource bars, system states, power allocation, and archive recovery progress.",
+      "status prints the current run seed, objective, run state, turn, location, resource bars, environmental telemetry, system states, power allocation, and archive recovery progress.",
+      "When called with a system name, status prints a detailed diagnostic readout for that system, including artifact validation results. Valid systems are reactor, life_support, sensors, archives, and propulsion.",
+      "With -a or --all, status prints detailed readouts for every system.",
       "It is the primary command for deciding whether to repair, reallocate power, scan, jump, or wait.",
     ],
-    examples: ["status", "status | grep oxygen"],
+    options: ["-a, --all    print detailed readouts for all systems"],
+    examples: ["status", "status reactor", "status sensors", "status --all", "status | grep oxygen"],
     seeAlso: ["power(1)", "repair(1)", "scan(1)", "logs(1)"],
   },
   tmux: {
