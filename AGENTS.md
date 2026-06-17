@@ -186,6 +186,32 @@ This creates a variable named oxygen
 containing the value 75.
 ```
 
+System service manuals also live under:
+
+```text
+/archive/manuals/reactor
+/archive/manuals/life_support
+/archive/manuals/sensors
+/archive/manuals/archives
+/archive/manuals/propulsion
+```
+
+Each system manual directory should feel like a real recovered service binder.
+Prefer practical documents that help the player diagnose faults:
+
+* service manuals
+* component inventories
+* ASCII diagrams
+* fault procedures
+* calibration notes
+* maintenance logs
+* informal field notes
+
+Manuals should contain extra operational detail, but the detail should remain
+actionable. If a system can fail through a repair artifact, the related manual
+should give the player enough evidence to infer the correction without a
+non-diegetic tutorial popup.
+
 ---
 
 # Lua Curriculum
@@ -305,6 +331,18 @@ Resources should evolve continuously.
 
 Players must make tradeoffs.
 
+The current implementation uses a step-and-drift model, documented in
+`docs/simulation.md`:
+
+* system condition changes in discrete labels such as `nominal`, `unstable`,
+  `degraded`, `damaged`, and `corrupted`
+* ship resources and environmental telemetry drift gradually each cycle
+* power allocation is the main player-controlled input into drift
+* repair artifacts determine whether a system can improve state
+
+When changing system behavior, update `docs/simulation.md` with the exact
+coupling so future tuning remains inspectable.
+
 ---
 
 # Randomized Runs
@@ -389,6 +427,24 @@ status
 Display current ship status.
 
 ```bash
+status -v
+```
+
+Display a compact visual status dashboard.
+
+```bash
+status reactor
+```
+
+Display a detailed diagnostic readout for a single system.
+
+```bash
+status --all
+```
+
+Display detailed diagnostic readouts for every tracked system.
+
+```bash
 scan
 ```
 
@@ -405,6 +461,18 @@ repair life_support
 ```
 
 Attempt repairs.
+
+Repairs should be artifact driven. Each system should expose logs,
+configuration files, diagnostics, and tables under:
+
+```text
+/ship/systems/<system>
+```
+
+Running `repair <system>` should validate those artifacts. If files still match
+a known fault signature, the command should identify the evidence path and the
+needed correction. If the player edits files into a known fault state, the
+repair system should recognize that fault.
 
 ```bash
 logs
@@ -430,6 +498,26 @@ run emergency.lua
 
 Execute a saved script.
 
+```bash
+man status
+```
+
+Display a standard Unix-style manual page for a command.
+
+```bash
+vim ~/.bashrc
+source ~/.bashrc
+```
+
+Edit and load operator aliases.
+
+```bash
+tmux
+```
+
+Attach to the terminal pane multiplexer. The prefix key is `Ctrl-b`.
+`Ctrl-b c` creates a vertical pane, and `Ctrl-b C` creates a horizontal pane.
+
 ---
 
 # Architecture
@@ -441,24 +529,26 @@ Suggested structure:
 ```text
 src/
   game/
-    engine.ts
-    state.ts
-    events.ts
-    commands.ts
-    luaApi.ts
-    map.ts
-    story.ts
+    engine.js
+    events.js
+    map.js
+    random.js
+    repairSystems.js
+    state.js
+    story.js
 
   terminal/
-    shell.ts
-    panes.ts
-    history.ts
-
-  components/
-    TerminalApp.tsx
-    Pane.tsx
-    StatusPanel.tsx
-    LuaEditor.tsx
+    Terminal.jsx
+    aliases.js
+    commands.js
+    completion.js
+    filesystem.js
+    luaRuntime.js
+    manpages.js
+    parser.js
+    path.js
+    shell.js
+    systemManuals.js
 ```
 
 Core APIs:
@@ -469,6 +559,14 @@ executeCommand(input: string)
 advanceTurn()
 runLuaScript(script: string)
 ```
+
+Current implementation notes:
+
+* React owns display, pane interaction, keyboard handling, and the vim-like editor.
+* `src/game` owns ship state, events, status formatting, resource drift, map movement, and repair validation.
+* `src/terminal` owns shell commands, parsing, aliases, man pages, virtual filesystem content, completion, and Lua bridging.
+* Keep repair fault definitions in sync with `/ship/systems/<system>` artifacts and `/archive/manuals/<system>` documentation.
+* Keep game logic independent from React so commands and Lua scripts can be tested without a browser.
 
 ---
 
