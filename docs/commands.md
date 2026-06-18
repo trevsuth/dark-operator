@@ -31,9 +31,20 @@ Handlers currently return one of:
 | `grep` | Search text | Searches stdin or files with a JavaScript regular expression. Supports `-i` and `-n`. |
 | `sed` | Transform text | Supports basic substitution expressions against stdin or files. |
 | `awk` | Process columns | Supports basic `print` programs against stdin or files. |
+| `diff` | Compare files | Compares two files line by line. Useful for baseline vs live artifacts. |
+| `head` | Print first lines | Prints the first 10 lines, or `-n COUNT`, from files or stdin. |
+| `tail` | Print last lines | Prints the last 10 lines, or `-n COUNT`, from files or stdin. |
+| `wc` | Count text | Prints line, word, and byte counts for files or stdin. |
+| `sort` | Sort lines | Sorts file or stdin lines lexically. |
+| `uniq` | Filter adjacent duplicates | Removes adjacent repeated lines. Pair with `sort` for grouped values. |
+| `checksum` | Hash text | Prints stable checksums for files or stdin. |
 | `vim` | Edit a file | Opens a simplified Vim-style editor for an existing file or a new file in an existing directory. |
 | `lua` | Run a Lua script | Executes a Lua script file from the fake filesystem with sandboxed game APIs. |
 | `map` | Show known sectors | Prints the known sector graph. `map -v` renders the explored graph as an ASCII diagram. |
+| `scan` | Scan current sector | Prints current-sector information. With sensors at 30+ power, also resolves adjacent sectors as scanned but unvisited. |
+| `diagnose` | Surface system diagnostics | Reports symptoms, fault families, and recommended evidence files. |
+| `watch` | Repeat Lua automation | Runs a Lua script for a bounded number of cycles. |
+| `unlock` | Unlock archive directories | Releases advanced archive files after enough archive context is recovered. |
 | `tmux` | Start terminal multiplexer | Enters a tmux-style pane interface for multiple terminal contexts. |
 
 ## Tmux
@@ -134,6 +145,21 @@ echo 'user:player' | awk -F: '{ print $2 }'
 ```
 
 Fields are split on whitespace by default. `-F` accepts a literal separator string.
+
+## Inspection Utilities
+
+Use these commands to compare repair artifacts, inspect long logs, and prepare data for Lua scripts:
+
+```bash
+diff /ship/baselines/sensors/arrays.tsv /ship/systems/sensors/arrays.tsv
+tail -n 5 /ship/systems/sensors/faults.log
+head /archive/manuals/reactor/service_manual.txt
+wc /ship/systems/archives/manifest.tsv
+cat /ship/systems/archives/manifest.tsv | sort | uniq
+checksum /ship/systems/reactor/config.ini
+```
+
+These utilities are intentionally small. They operate on virtual filesystem text and pipeline input, not the host machine.
 
 ## Vim Editor
 

@@ -58,7 +58,7 @@ run emergency.lua
 jump sector-02
 ```
 
-The shell also supports familiar utility commands such as `ls`, `cd`, `cat`, `grep`, `sed`, `awk`, `vim`, `lua`, `man`, `alias`, `source`, and `tmux`.
+The shell also supports familiar utility commands such as `ls`, `cd`, `cat`, `grep`, `sed`, `awk`, `diff`, `head`, `tail`, `wc`, `sort`, `uniq`, `checksum`, `vim`, `lua`, `man`, `alias`, `source`, and `tmux`.
 
 ## How To Play
 
@@ -92,7 +92,18 @@ map -v
 jump sector-02
 ```
 
-`scan` advances the cycle and may recover archive fragments. `jump` moves only to adjacent sectors and costs fuel. The objective is to reach the beacon terminus after recovering enough archive context.
+`scan` advances the cycle and may recover archive fragments. If sensors have at least `30` power allocated, `scan` also resolves adjacent sectors before you jump into them:
+
+```bash
+power archives 0
+power sensors 30
+scan
+map -v
+```
+
+Adjacent scans reveal nearby sector names, signal bias, route links, and whether an archive signature is present. They do not recover archive fragments; to recover a fragment, jump to that sector and scan it directly.
+
+`jump` moves only to adjacent sectors and costs fuel. The objective is to reach the beacon terminus after recovering enough archive context.
 
 ### Win Conditions And Archive Fragments
 
@@ -123,9 +134,19 @@ archives recovered: 0/3
 
 The run is lost if hull reaches `0`, oxygen reaches `0`, fuel reaches `0`, or heat reaches `100`.
 
+Map markers:
+
+```text
+* current sector
++ visited sector
+~ scanned but unvisited sector
+? unscanned sector
+```
+
 Repair systems by inspecting their files, editing bad artifacts, then validating the repair:
 
 ```bash
+diagnose reactor
 status reactor
 ls /ship/systems/reactor
 cat /ship/systems/reactor/faults.log
@@ -134,6 +155,16 @@ repair reactor
 ```
 
 If `repair` reports active artifact faults, read the evidence path and correct the listed file. System manuals under `/archive/manuals/<system>` explain expected values and failure modes.
+
+Clean reference snapshots are available under `/ship/baselines/<system>`. Use them when a repair depends on multiple files agreeing with each other:
+
+```bash
+ls /ship/baselines/reactor
+cat /ship/baselines/reactor/config.ini
+cat /ship/systems/reactor/config.ini
+diff /ship/baselines/reactor/config.ini /ship/systems/reactor/config.ini
+tail /ship/systems/reactor/status.log
+```
 
 Allocate power when resources are drifting badly:
 
@@ -151,9 +182,18 @@ Use Lua when a task becomes repetitive:
 cat emergency.lua
 vim emergency.lua
 run emergency.lua
+run audit.lua
+watch survey.lua 2
 ```
 
 Lua scripts can read status, scan, repair, allocate power, and inspect virtual files. Start with `/archive/manuals/lua/01_variables.txt`.
+
+As you recover archive fragments or restore the archive system, sealed archive directories can be released:
+
+```bash
+unlock archives
+ls /archive/manuals/advanced
+```
 
 Use panes when you want status, logs, manuals, and scripts visible in separate terminals:
 
@@ -180,6 +220,14 @@ Each system has repair artifacts under:
 ```
 
 These include configuration files, logs, diagnostics, data tables, and scripts. Running `repair <system>` validates those artifacts against known fault signatures before improving the system state.
+
+Each system also has clean baseline snapshots under:
+
+```text
+/ship/baselines/<system>
+```
+
+Baselines exclude volatile files such as `status.log`, `faults.log`, and scripts. They are reference artifacts for manual inspection and future comparison tools.
 
 Each system also has a service manual directory under:
 

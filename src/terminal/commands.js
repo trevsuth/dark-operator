@@ -1,5 +1,6 @@
 import { formatAlias, loadBashrcAliases, parseAliasLine } from "./aliases.js";
-import { getParentDirectory, listDirectory, readFile, resolveNode } from "./filesystem.js";
+import { appendScheduledSystemLogs } from "./degradationLogs.js";
+import { getParentDirectory, listDirectory, readFile, resolveNode, writeFile } from "./filesystem.js";
 import { runLuaScript } from "./luaRuntime.js";
 import { getManPage, listManPages, searchManPages } from "./manpages.js";
 import { basename, normalizePath } from "./path.js";
@@ -101,6 +102,7 @@ export function createCommandRegistry() {
     scan: gameCommand("scan the current sector"),
     logs: gameCommand("show recent ship events"),
     map: gameCommand("show known sectors"),
+    diagnose: gameCommand("surface system diagnostics"),
     jump: gameCommand("travel to an adjacent sector"),
     repair: gameCommand("attempt system repair"),
     power: gameCommand("allocate ship power"),
@@ -259,6 +261,145 @@ export function createCommandRegistry() {
         return text(output);
       },
     },
+    head: {
+      summary: "print the first lines",
+      run: ({ args, state, stdin }) => {
+        const parsed = parseCountAndFiles(args, 10);
+        const input = collectTextSources(parsed.files, state, stdin, "head");
+        if (!input.ok) return text(input.errors);
+        return text(input.lines.slice(0, parsed.count));
+      },
+    },
+    tail: {
+      summary: "print the last lines",
+      run: ({ args, state, stdin }) => {
+        const parsed = parseCountAndFiles(args, 10);
+        const input = collectTextSources(parsed.files, state, stdin, "tail");
+        if (!input.ok) return text(input.errors);
+        return text(input.lines.slice(-parsed.count));
+      },
+    },
+    wc: {
+      summary: "count lines words and bytes",
+      run: ({ args, state, stdin }) => {
+        const input = collectTextSources(args, state, stdin, "wc");
+        if (!input.ok) return text(input.errors);
+        const content = input.lines.join("\n");
+        const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+        return text(`${input.lines.length} ${words} ${content.length}`);
+      },
+    },
+    sort: {
+      summary: "sort text lines",
+      run: ({ args, state, stdin }) => {
+        const input = collectTextSources(args, state, stdin, "sort");
+        if (!input.ok) return text(input.errors);
+        return text([...input.lines].sort((a, b) => a.localeCompare(b)));
+      },
+    },
+    uniq: {
+      summary: "filter repeated lines",
+      run: ({ args, state, stdin }) => {
+        const input = collectTextSources(args, state, stdin, "uniq");
+        if (!input.ok) return text(input.errors);
+        const output = [];
+        for (const line of input.lines) {
+          if (line !== output.at(-1)) output.push(line);
+        }
+        return text(output);
+      },
+    },
+    diff: {
+      summary: "compare two files",
+      run: ({ args, state }) => {
+        if (args.length < 2) return text("diff: missing file operand");
+        const left = readFile(args[0], state.cwd, state.fileSystem);
+        const right = readFile(args[1], state.cwd, state.fileSystem);
+        if (!left.ok) return text(left.error.replace(/^cat:/, "diff:"));
+        if (!right.ok) return text(right.error.replace(/^cat:/, "diff:"));
+        return text(formatDiff(args[0], left.content, args[1], right.content));
+      },
+    },
+    checksum: {
+      summary: "print stable file checksums",
+      run: ({ args, state, stdin }) => {
+        if (!args.length) {
+          const content = (stdin || []).join("\n");
+          return text(`${checksumText(content)}  -`);
+        }
+
+        const lines = [];
+        for (const path of args) {
+          const result = readFile(path, state.cwd, state.fileSystem);
+          lines.push(result.ok ? `${checksumText(result.content)}  ${path}` : result.error.replace(/^cat:/, "checksum:"));
+        }
+        return text(lines);
+      },
+    },
+    watch: {
+      summary: "run a Lua script for several cycles",
+      run: ({ args, state }) => {
+        if (!args.length) return text("watch: missing script file");
+        const scriptPath = args[0];
+        const count = Math.max(1, Math.min(5, Number(args[1]) || 3));
+        const script = readFile(scriptPath, state.cwd, state.fileSystem);
+        if (!script.ok) return text(script.error.replace(/^cat:/, "watch:"));
+
+        let nextState = state;
+        const lines = [`watch: running ${scriptPath} for ${count} cycle${count === 1 ? "" : "s"}`];
+        for (let index = 0; index < count; index += 1) {
+          const result = runLuaScript(script.content, nextState);
+          const fileSystem = appendScheduledSystemLogs(nextState.game, result.game, result.fileSystem);
+          nextState = {
+            ...nextState,
+            fileSystem,
+            scriptState: result.scriptState,
+            game: result.game,
+          };
+          lines.push(`[WATCH ${index + 1}/${count}]`);
+          lines.push(...result.lines);
+          if (result.game.status !== "active") break;
+        }
+
+        return {
+          type: "state",
+          patch: {
+            fileSystem: nextState.fileSystem,
+            scriptState: nextState.scriptState,
+            game: nextState.game,
+          },
+          lines,
+        };
+      },
+    },
+    unlock: {
+      summary: "unlock recovered archive directories",
+      run: ({ args, state }) => {
+        if (args[0] !== "archives") return text("unlock: usage: unlock archives");
+        const archiveReady = state.game.systems.archives === "nominal" || state.game.discoveredFragments.length >= 2;
+        if (!archiveReady) {
+          return text([
+            "unlock: archive context insufficient",
+            "require archives=nominal or at least two recovered archive fragments",
+          ]);
+        }
+
+        let fileSystem = state.fileSystem;
+        for (const [path, content] of Object.entries(unlockedArchiveFiles())) {
+          const result = writeFile(path, "/", content, fileSystem);
+          if (result.ok) fileSystem = result.fileSystem;
+        }
+
+        return {
+          type: "state",
+          patch: { fileSystem },
+          lines: [
+            "[ARCHIVE] Advanced directories unlocked.",
+            "available: /archive/manuals/advanced  /archive/crew/private  /archive/diagnostics/historical",
+          ],
+        };
+      },
+    },
     vim: {
       summary: "edit a file",
       run: ({ args, state }) => {
@@ -324,9 +465,10 @@ function gameCommand(summary) {
     summary,
     run: ({ parsed, args, state }) => {
       const result = executeGameCommand(parsed.command, args, state.game, { fileSystem: state.fileSystem });
+      const fileSystem = appendScheduledSystemLogs(state.game, result.game, state.fileSystem);
       return {
         type: "state",
-        patch: { game: result.game },
+        patch: { game: result.game, fileSystem },
         lines: result.lines,
       };
     },
@@ -342,10 +484,11 @@ function runLuaCommand(commandName) {
     if (!script.ok) return text(script.error.replace(/^cat:/, `${commandName}:`));
 
     const result = runLuaScript(script.content, state);
+    const fileSystem = appendScheduledSystemLogs(state.game, result.game, result.fileSystem);
     return {
       type: "state",
       patch: {
-        fileSystem: result.fileSystem,
+        fileSystem,
         scriptState: result.scriptState,
         game: result.game,
       },
@@ -400,6 +543,68 @@ function collectTextSources(files, state, stdin = [], commandName) {
   }
 
   return errors.length ? { ok: false, lines, errors } : { ok: true, lines, errors };
+}
+
+function parseCountAndFiles(args, defaultCount) {
+  const parsed = { count: defaultCount, files: [] };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "-n") {
+      parsed.count = Math.max(0, Number(args[index + 1]) || defaultCount);
+      index += 1;
+      continue;
+    }
+
+    if (/^-n\d+$/.test(arg)) {
+      parsed.count = Number(arg.slice(2));
+      continue;
+    }
+
+    parsed.files.push(arg);
+  }
+
+  return parsed;
+}
+
+function formatDiff(leftPath, leftContent, rightPath, rightContent) {
+  const leftLines = splitTextLines(leftContent);
+  const rightLines = splitTextLines(rightContent);
+  const max = Math.max(leftLines.length, rightLines.length);
+  const output = [];
+
+  for (let index = 0; index < max; index += 1) {
+    const left = leftLines[index];
+    const right = rightLines[index];
+    if (left === right) continue;
+    if (!output.length) output.push(`--- ${leftPath}`, `+++ ${rightPath}`);
+    if (left !== undefined) output.push(`-${index + 1}: ${left}`);
+    if (right !== undefined) output.push(`+${index + 1}: ${right}`);
+  }
+
+  return output;
+}
+
+function checksumText(content) {
+  let hash = 0x811c9dc5;
+  for (const char of String(content)) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function unlockedArchiveFiles() {
+  return {
+    "/archive/manuals/advanced/automation_watch.txt":
+      "ADVANCED AUTOMATION NOTE\n\nA watch routine repeats a Lua script for a bounded number of cycles.\nUse it for conservative polling, not blind repair. Scripts that change power or run repairs should print every action they take.\n",
+    "/archive/manuals/advanced/baseline_audit.txt":
+      "BASELINE AUDIT PROCEDURE\n\nCompare /ship/systems/<system> against /ship/baselines/<system>.\nStart with config.ini, diagnostics/latest.txt, and table files. Logs are volatile and should not match baselines.\n",
+    "/archive/crew/private/command_note.txt":
+      "PRIVATE COMMAND NOTE\n\nThe final command index was never empty. It was redacted by a process with maintenance authority.\nEngineering note: the redaction coincided with archive dust-gate alarms.\n",
+    "/archive/diagnostics/historical/archive-dust-incident.txt":
+      "HISTORICAL DIAGNOSTIC CACHE\n\n2290-11-15: archive dust gate reported closed while particulate rose across the central spine.\nContradiction unresolved. Compare archive config with environmental telemetry before trusting either record.\n",
+  };
 }
 
 function parseSedArgs(args) {

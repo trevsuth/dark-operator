@@ -1,6 +1,6 @@
 import { basename, dirname, normalizePath } from "./path.js";
 import { createSystemManualTree } from "./systemManuals.js";
-import { createSystemFileTree } from "../game/repairSystems.js";
+import { createSystemBaselineTree, createSystemFileTree } from "../game/repairSystems.js";
 
 export const fileSystem = {
   type: "directory",
@@ -31,6 +31,11 @@ export const fileSystem = {
               content:
                 "local s = ship.status()\nprint('sector', s.location)\nship.scan()\n",
             },
+            "audit.lua": {
+              type: "file",
+              content:
+                "local systems = {'reactor', 'life_support', 'sensors', 'archives', 'propulsion'}\n\nfor _, system in ipairs(systems) do\n  print('==', system, '==')\n  local faults = fs.read('/ship/systems/' .. system .. '/faults.log')\n  if faults then print(faults) end\n\n  local live = fs.read('/ship/systems/' .. system .. '/config.ini')\n  local base = fs.read('/ship/baselines/' .. system .. '/config.ini')\n  if live and base and live ~= base then\n    print('config differs from baseline')\n  end\nend\n",
+            },
             "readme.txt": {
               type: "file",
               content:
@@ -47,6 +52,16 @@ export const fileSystem = {
           type: "directory",
           children: {
             ...createSystemManualTree().children,
+            advanced: {
+              type: "directory",
+              children: {
+                "LOCKED.txt": {
+                  type: "file",
+                  content:
+                    "ADVANCED MANUAL INDEX SEALED\n\nRun unlock archives after recovering sufficient archive context or restoring the archives system to nominal.",
+                },
+              },
+            },
             lua: {
               type: "directory",
               children: {
@@ -72,6 +87,16 @@ export const fileSystem = {
         crew: {
           type: "directory",
           children: {
+            private: {
+              type: "directory",
+              children: {
+                "LOCKED.txt": {
+                  type: "file",
+                  content:
+                    "PRIVATE CREW RECORDS SEALED\n\nArchive authority requires recovered context before release.",
+                },
+              },
+            },
             "orientation.txt": {
               type: "file",
               content:
@@ -81,6 +106,21 @@ export const fileSystem = {
               type: "file",
               content:
                 "MAINTENANCE RECORD 8841\n\nLife support loop B was relabeled twice during the fifth refit. New operators should trust live pressure readings over deck diagrams.",
+            },
+          },
+        },
+        diagnostics: {
+          type: "directory",
+          children: {
+            historical: {
+              type: "directory",
+              children: {
+                "LOCKED.txt": {
+                  type: "file",
+                  content:
+                    "HISTORICAL DIAGNOSTIC CACHE SEALED\n\nRecover archive fragments or restore archive index service.",
+                },
+              },
             },
           },
         },
@@ -97,8 +137,9 @@ export const fileSystem = {
         "systems.txt": {
           type: "file",
           content:
-            "Tracked systems: reactor, life_support, sensors, archives, propulsion.\nTracked resources: hull, power, oxygen, fuel, heat, signal.\nEnvironmental telemetry: pressure, ambient temperature, humidity, atmosphere composition, CO2, particulate load.\nSystem artifacts live under /ship/systems/<system>.\nUse status for live telemetry and status <system> for repair diagnostics.",
+            "Tracked systems: reactor, life_support, sensors, archives, propulsion.\nTracked resources: hull, power, oxygen, fuel, heat, signal.\nEnvironmental telemetry: pressure, ambient temperature, humidity, atmosphere composition, CO2, particulate load.\nSystem artifacts live under /ship/systems/<system>.\nBaseline snapshots live under /ship/baselines/<system>.\nUse status for live telemetry and status <system> for repair diagnostics.",
         },
+        baselines: createSystemBaselineTree(),
         systems: createSystemFileTree(),
       },
     },

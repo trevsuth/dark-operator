@@ -1,5 +1,54 @@
 const SYSTEM_ROOT = "/ship/systems";
 
+const baselineOverrides = {
+  sensors: {
+    "arrays.tsv": "id\tstate\tangular_error\tdeployment\nARRAY-A\tonline\t0.2\tdeployed\nARRAY-B\tonline\t0.4\tdeployed\nMAST-C\tonline\t0.3\tdeployed\n",
+  },
+};
+
+const faultFamilies = {
+  coolant_phase: "thermal-control",
+  rod_delay: "control-latency",
+  thermal_override: "safety-override",
+  relay_dropout: "power-routing",
+  sensor_disagreement: "sensor-disagreement",
+  scram_latch: "safety-interlock",
+  coolant_contamination: "thermal-control",
+  baseline_mismatch: "baseline-consistency",
+  pressure_valve_open: "pressure-loss",
+  scrubber_saturated: "atmosphere-processing",
+  oxygen_mix: "atmosphere-mix",
+  condenser_offline: "humidity-control",
+  bad_atmosphere_sensor: "sensor-disagreement",
+  biofilter_contamination: "contamination",
+  loop_label: "route-labeling",
+  atmosphere_baseline_mismatch: "baseline-consistency",
+  lidar_alignment: "sensor-alignment",
+  signal_filter: "signal-filtering",
+  archive_bus: "archive-correlation",
+  timebase_drift: "clock-drift",
+  mast_shadowing: "sensor-occlusion",
+  noise_model: "signal-filtering",
+  rail_undervoltage: "power-quality",
+  calibration_filter_mismatch: "baseline-consistency",
+  index_corruption: "archive-index",
+  checksum_mismatch: "archive-integrity",
+  readonly_vault: "write-permission",
+  duplicate_manifest: "archive-index",
+  dust_gate: "contamination",
+  manual_catalog: "catalog-routing",
+  cold_storage: "storage-wake",
+  manifest_index_mismatch: "baseline-consistency",
+  thruster_imbalance: "thrust-balance",
+  fuel_sensor_offset: "sensor-disagreement",
+  route_table: "route-planning",
+  radiator_lock: "thermal-control",
+  reserve_leak: "pressure-loss",
+  planner_checksum: "planner-integrity",
+  drive_vibration: "mechanical-vibration",
+  planner_config_mismatch: "baseline-consistency",
+};
+
 export const systemRepairModels = {
   reactor: {
     files: {
@@ -16,6 +65,8 @@ export const systemRepairModels = {
       "diagnostics/baseline.txt":
         "rod_response_ms=80\nthermal_alarm=enabled\nthermal_limit_c=72\npump_phase=0\nconductivity_max=0.20\n",
       "scripts/check.lua": "ship.print_status()\n",
+      "scripts/repair.lua":
+        "-- INCOMPLETE REACTOR REPAIR SCRIPT\n-- Compare /ship/systems/reactor/config.ini with /ship/baselines/reactor/config.ini.\n-- Then inspect coolant.tsv and relays.tsv before running repair reactor.\nprint('reactor repair script incomplete: inspect config, coolant, relays')\n",
     },
     faults: [
       fault("coolant_phase", "Coolant pump phase mismatch", "coolant.tsv", "Set all coolant pump phase values to 0.", (files) =>
@@ -34,6 +85,10 @@ export const systemRepairModels = {
         readKey(files["config.ini"], "scram_latch") !== "clear"),
       fault("coolant_contamination", "Coolant contamination", "coolant.tsv", "Reduce coolant conductivity below 0.20 or switch to a clean loop.", (files) =>
         tableRows(files["coolant.tsv"]).some((row) => Number(row.conductivity) > 0.2)),
+      fault("baseline_mismatch", "Reactor baseline mismatch", "config.ini", "Make config.ini match diagnostics/baseline.txt for rod response and thermal alarm values.", (files) =>
+        readKey(files["config.ini"], "rod_response_ms") !== readKey(files["diagnostics/baseline.txt"], "rod_response_ms") ||
+        readKey(files["config.ini"], "thermal_alarm") !== readKey(files["diagnostics/baseline.txt"], "thermal_alarm") ||
+        readKey(files["config.ini"], "thermal_limit_c") !== readKey(files["diagnostics/baseline.txt"], "thermal_limit_c")),
     ],
   },
   life_support: {
@@ -50,6 +105,8 @@ export const systemRepairModels = {
       "diagnostics/latest.txt": "pressure_variance=0.2\nco2_scrub_rate=nominal\nhumidity_condenser=online\n",
       "diagnostics/baseline.txt": "target_o2_percent=20.8\npressure_kpa=99.1\nscrubber_capacity_min=20\n",
       "scripts/check.lua": "local s = ship.status()\nprint(s.environment.pressureKpa)\nprint(s.environment.co2Ppm)\n",
+      "scripts/repair.lua":
+        "-- INCOMPLETE LIFE SUPPORT REPAIR SCRIPT\n-- TODO: verify valves.tsv, scrubbers.tsv, atmosphere.tsv, and config.ini agree.\nprint('life support repair script incomplete: inspect valves, scrubbers, atmosphere')\n",
     },
     faults: [
       fault("pressure_valve_open", "Pressure valve stuck open", "valves.tsv", "Set pressure valves to position=regulated.", (files) =>
@@ -66,6 +123,10 @@ export const systemRepairModels = {
         ["contaminated", "fouled"].includes(readKey(files["config.ini"], "biofilter_bed"))),
       fault("loop_label", "Loop B mislabeled route", "config.ini", "Restore loop_b_label=loop-b.", (files) =>
         readKey(files["config.ini"], "loop_b_label") !== "loop-b"),
+      fault("atmosphere_baseline_mismatch", "Atmosphere baseline mismatch", "config.ini", "Make config.ini target_o2_percent and atmosphere.tsv sensor averages agree with diagnostics/baseline.txt.", (files) =>
+        Number(readKey(files["config.ini"], "target_o2_percent")) !== Number(readKey(files["diagnostics/baseline.txt"], "target_o2_percent")) ||
+        Math.abs(average(tableRows(files["atmosphere.tsv"]).map((row) => Number(row.pressure_kpa))) - Number(readKey(files["diagnostics/baseline.txt"], "pressure_kpa"))) > 1 ||
+        Math.abs(average(tableRows(files["atmosphere.tsv"]).map((row) => Number(row.o2_percent))) - Number(readKey(files["diagnostics/baseline.txt"], "target_o2_percent"))) > 0.5),
     ],
   },
   sensors: {
@@ -82,6 +143,8 @@ export const systemRepairModels = {
       "diagnostics/latest.txt": "clock_skew_ms=12\nrail_voltage=11.8\narchive_bus_latency=31\n",
       "diagnostics/baseline.txt": "angular_error_max=1.0\nminimum_signal=8\nclock_skew_ms_max=50\nrail_voltage_min=11.2\n",
       "scripts/check.lua": "ship.scan()\n",
+      "scripts/repair.lua":
+        "-- INCOMPLETE SENSOR REPAIR SCRIPT\nlocal arrays = fs.read('/ship/systems/sensors/arrays.tsv')\nprint(arrays)\nprint('TODO: compare angular_error values with /ship/baselines/sensors/arrays.tsv')\n",
     },
     faults: [
       fault("lidar_alignment", "Lidar array misalignment", "arrays.tsv", "Reduce angular_error values to 1.0 or lower.", (files) =>
@@ -98,6 +161,9 @@ export const systemRepairModels = {
         readKey(files["filters.ini"], "noise_model") !== "simurgh-default"),
       fault("rail_undervoltage", "Sensor power rail undervoltage", "diagnostics/latest.txt", "Restore rail voltage to 11.2 or higher.", (files) =>
         Number(readKey(files["diagnostics/latest.txt"], "rail_voltage")) < 11.2),
+      fault("calibration_filter_mismatch", "Calibration filter mismatch", "filters.ini", "Make filters.ini match calibration.dat and diagnostics/baseline.txt.", (files) =>
+        readKey(files["filters.ini"], "noise_model") !== readKey(files["calibration.dat"], "noise_model") ||
+        Number(readKey(files["filters.ini"], "minimum_signal")) !== Number(readKey(files["diagnostics/baseline.txt"], "minimum_signal"))),
     ],
   },
   archives: {
@@ -112,6 +178,8 @@ export const systemRepairModels = {
       "diagnostics/latest.txt": "index_duplicates=0\ncold_storage=awake\ncatalog_resolved=true\n",
       "diagnostics/baseline.txt": "manifest_checksum=ok\nvault_mode=emergency-write\ndust_gate=closed\n",
       "scripts/check.lua": "local files = fs.list('/archive/manuals/lua')\nfor _, file in ipairs(files) do print(file) end\n",
+      "scripts/repair.lua":
+        "-- INCOMPLETE ARCHIVE REPAIR SCRIPT\n-- TODO: compare index.map with manifest.tsv and confirm checksum.txt.\nprint('archive repair script incomplete: inspect index, manifest, checksum')\n",
     },
     faults: [
       fault("index_corruption", "Index map corruption", "index.map", "Ensure each archive id has a unique offset.", (files) => hasDuplicateValues(keyValueLines(files["index.map"]))),
@@ -126,6 +194,15 @@ export const systemRepairModels = {
         readKey(files["config.ini"], "manual_catalog") !== "/archive/manuals/lua"),
       fault("cold_storage", "Cold storage wake failure", "config.ini", "Set cold_storage_bank=awake.", (files) =>
         readKey(files["config.ini"], "cold_storage_bank") !== "awake"),
+      fault("manifest_index_mismatch", "Manifest/index offset mismatch", "manifest.tsv", "Make manifest.tsv offsets match index.map for every archive id.", (files) => {
+        const index = Object.fromEntries(
+          String(files["index.map"] || "")
+            .split("\n")
+            .filter((line) => line.includes("="))
+            .map((line) => line.split("=")),
+        );
+        return tableRows(files["manifest.tsv"]).some((row) => index[row.id] !== row.offset);
+      }),
     ],
   },
   propulsion: {
@@ -140,6 +217,8 @@ export const systemRepairModels = {
       "diagnostics/latest.txt": "burn_planner_checksum=ok\ntruss_vibration=0.3\nfuel_sensor_offset=0\n",
       "diagnostics/baseline.txt": "aperture=50\npressure_loss=0\nplanner_checksum=ok\nvibration_max=1.0\n",
       "scripts/check.lua": "ship.print_status()\n",
+      "scripts/repair.lua":
+        "-- INCOMPLETE PROPULSION REPAIR SCRIPT\n-- TODO: verify active_tank, fuel.tsv, thrusters.tsv, and diagnostics/latest.txt agree.\nprint('propulsion repair script incomplete: inspect fuel, thrusters, planner')\n",
     },
     faults: [
       fault("thruster_imbalance", "Thruster valve imbalance", "thrusters.tsv", "Normalize thruster aperture values within 5 units.", (files) => {
@@ -158,6 +237,9 @@ export const systemRepairModels = {
         readKey(files["diagnostics/latest.txt"], "burn_planner_checksum") !== "ok"),
       fault("drive_vibration", "Drive truss vibration", "thrusters.tsv", "Reduce truss vibration below 1.0.", (files) =>
         tableRows(files["thrusters.tsv"]).some((row) => Number(row.vibration) > 1)),
+      fault("planner_config_mismatch", "Planner configuration mismatch", "config.ini", "Make config.ini planner_checksum and active_tank agree with diagnostics/latest.txt and fuel.tsv.", (files) =>
+        readKey(files["config.ini"], "planner_checksum") !== readKey(files["diagnostics/latest.txt"], "burn_planner_checksum") ||
+        !tableRows(files["fuel.tsv"]).some((row) => row.tank === readKey(files["config.ini"], "active_tank") && row.state === "active")),
     ],
   },
 };
@@ -167,6 +249,15 @@ export function createSystemFileTree() {
     type: "directory",
     children: Object.fromEntries(
       Object.entries(systemRepairModels).map(([system, model]) => [system, directoryFromFiles(model.files)]),
+    ),
+  };
+}
+
+export function createSystemBaselineTree() {
+  return {
+    type: "directory",
+    children: Object.fromEntries(
+      Object.entries(systemRepairModels).map(([system, model]) => [system, directoryFromFiles(createBaselineFiles(system, model.files))]),
     ),
   };
 }
@@ -192,7 +283,7 @@ export function getSystemRoot(system) {
 }
 
 function fault(id, title, file, repair, check) {
-  return { id, title, file: `${SYSTEM_ROOT}/SYSTEM/${file}`, repair, check };
+  return { id, title, family: faultFamilies[id] || "general", file: `${SYSTEM_ROOT}/SYSTEM/${file}`, repair, check };
 }
 
 function readSystemFiles(system, root, files) {
@@ -209,6 +300,21 @@ function readVirtualFile(root, path) {
     node = node.children[part];
   }
   return node?.type === "file" ? node.content : null;
+}
+
+function createBaselineFiles(system, files) {
+  const stableFiles = {
+    ...Object.fromEntries(
+      Object.entries(files)
+        .filter(([path]) => !path.endsWith("status.log") && !path.endsWith("faults.log") && !path.startsWith("scripts/") && path !== "README.txt"),
+    ),
+    ...(baselineOverrides[system] || {}),
+  };
+
+  return {
+    "README.txt": `${system.toUpperCase()} BASELINE SNAPSHOT\n\nThese files represent the expected clean artifact state for ${system}.\nCompare them with /ship/systems/${system} when diagnosing multi-file repairs.\nVolatile status.log, faults.log, and scripts are intentionally excluded.\n`,
+    ...stableFiles,
+  };
 }
 
 function directoryFromFiles(files) {
@@ -262,4 +368,10 @@ function hasDuplicateValues(values) {
     seen.add(value);
   }
   return false;
+}
+
+function average(values) {
+  const numbers = values.filter(Number.isFinite);
+  if (!numbers.length) return Number.NaN;
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
 }

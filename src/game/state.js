@@ -63,6 +63,7 @@ export function createGame(seed = "simurgh-001") {
       propulsion: 10,
     },
     visited: ["sector-01"],
+    scanned: ["sector-01"],
     discoveredFragments: [],
     logs: [
       "[BOOT] CSV Simurgh emergency operator console restored.",
@@ -80,6 +81,7 @@ export function cloneGame(game) {
     systems: { ...game.systems },
     power: { ...game.power },
     visited: [...game.visited],
+    scanned: [...(game.scanned || game.visited || [])],
     discoveredFragments: [...game.discoveredFragments],
     logs: [...game.logs],
     eventOrder: [...game.eventOrder],

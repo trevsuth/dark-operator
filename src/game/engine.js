@@ -4,6 +4,7 @@ import { analyzeSystemFaults, getSystemArtifactPaths, getSystemRoot } from "./re
 import { appendLog, cloneGame, formatSystem, getCurrentSector, getStoryFragment } from "./state.js";
 
 const SYSTEMS = ["reactor", "life_support", "sensors", "archives", "propulsion"];
+const ADJACENT_SCAN_POWER = 30;
 
 export function executeGameCommand(command, args, game, context = {}) {
   switch (command) {
@@ -15,6 +16,8 @@ export function executeGameCommand(command, args, game, context = {}) {
       return { game, lines: game.logs.slice(-16) };
     case "map":
       return { game, lines: formatMapCommand(game, args) };
+    case "diagnose":
+      return { game, lines: diagnoseSystem(game, args[0], context) };
     case "jump":
       return jumpSector(game, args[0]);
     case "repair":
@@ -89,6 +92,21 @@ export function scanSector(game) {
     `Signal strength: ${next.ship.signal + sector.signal}`,
   ];
 
+  if (!next.scanned.includes(next.ship.location)) next.scanned.push(next.ship.location);
+
+  if (next.power.sensors >= ADJACENT_SCAN_POWER) {
+    const newlyScanned = sector.links.filter((id) => !next.scanned.includes(id));
+    for (const id of newlyScanned) next.scanned.push(id);
+    lines.push(
+      "",
+      `[SENSORS] Adjacent sweep authorized by sensors allocation ${next.power.sensors}/60.`,
+      ...sector.links.flatMap((id) => formatAdjacentScanReturn(id, next)),
+    );
+    if (!newlyScanned.length) lines.push("[SENSORS] No new adjacent sectors resolved.");
+  } else {
+    lines.push(`[SENSORS] Adjacent sweep requires sensors allocation ${ADJACENT_SCAN_POWER}/60 or higher.`);
+  }
+
   if (sector.fragment && !next.discoveredFragments.includes(sector.fragment)) {
     const fragment = getStoryFragment(sector.fragment);
     next.discoveredFragments.push(sector.fragment);
@@ -114,6 +132,7 @@ export function jumpSector(game, destination) {
   next.ship.location = destination;
   next.ship.fuel = clamp(next.ship.fuel - 8, 0, 100);
   if (!next.visited.includes(destination)) next.visited.push(destination);
+  if (!next.scanned.includes(destination)) next.scanned.push(destination);
 
   const sector = getCurrentSector(next);
   const lines = [`[NAV] Jump complete: ${destination} - ${sector.name}.`, sector.description];
@@ -178,6 +197,42 @@ export function allocatePower(game, system, amount) {
   const line = `[POWER] ${formatSystem(system)} allocation set to ${Math.floor(amount)}. Grid demand ${total}/100.`;
   next = appendLog(next, line);
   return { game: next, lines: [line] };
+}
+
+function diagnoseSystem(game, system, context = {}) {
+  if (!system) return [`diagnose: missing system (${SYSTEMS.join(", ")})`];
+  system = normalizeSystemName(system);
+  if (!SYSTEMS.includes(system)) return [`diagnose: ${system}: unknown system`];
+
+  const faults = getArtifactFaults(system, context);
+  const profile = SYSTEM_PROFILES[system];
+  const familyLines = faults.length
+    ? [...new Set(faults.map((fault) => fault.family || "general"))].map((family) => `  - ${family}`)
+    : ["  none detected from artifact signatures"];
+
+  return [
+    `CSV SIMURGH DIAGNOSTIC: ${system.toUpperCase()}`,
+    `state: ${game.systems[system]}`,
+    `allocation: ${game.power[system]}/60`,
+    `function: ${profile.function}`,
+    "",
+    "surface symptoms:",
+    ...profile.diagnostics(game).map((line) => `  - ${line}`),
+    "",
+    "fault families:",
+    ...familyLines,
+    "",
+    "recommended inspection:",
+    ...getSystemArtifactPaths(system)
+      .filter((path) => !path.endsWith("status.log"))
+      .slice(0, 8)
+      .map((path) => `  ${path}`),
+    `  /ship/baselines/${system}`,
+    "",
+    faults.length
+      ? "diagnose reports symptoms only. Use status, diff, tail, and repair for evidence and correction."
+      : "no active artifact fault signatures detected. Continue watching status.log for drift.",
+  ];
 }
 
 export function formatStatus(game) {
@@ -336,8 +391,9 @@ const SYSTEM_PROFILES = {
       ["signal", `${game.ship.signal}/100 processed`],
       ["allocation", `${game.power.sensors}/60 local cap`],
       ["sector bias", `${getCurrentSector(game).signal} local signal`],
-      ["known sectors", `${game.visited.length}/${Object.keys(sectorMap).length}`],
+      ["known sectors", `${getKnownSectors(game).length}/${Object.keys(sectorMap).length}`],
       ["scan gain", `+${Math.floor(game.power.sensors / 15)} signal/cycle`],
+      ["adjacent sweep", game.power.sensors >= ADJACENT_SCAN_POWER ? "enabled" : `requires ${ADJACENT_SCAN_POWER}/60 allocation`],
     ],
     diagnostics: (game) => [
       systemStateLine(game, "sensors"),
@@ -383,9 +439,10 @@ const SYSTEM_PROFILES = {
 
 function formatMap(game) {
   return Object.entries(sectorMap).map(([id, sector]) => {
-    const marker = game.ship.location === id ? "*" : game.visited.includes(id) ? "+" : "?";
-    const name = game.visited.includes(id) || game.ship.location === id ? sector.name : "unscanned sector";
-    const links = game.visited.includes(id) || game.ship.location === id ? ` -> ${sector.links.join(", ")}` : "";
+    const known = isKnownSector(game, id);
+    const marker = game.ship.location === id ? "*" : game.visited.includes(id) ? "+" : known ? "~" : "?";
+    const name = known ? sector.name : "unscanned sector";
+    const links = known ? ` -> ${sector.links.join(", ")}` : "";
     return `${marker} ${id} ${name}${links}`;
   });
 }
@@ -405,7 +462,7 @@ function formatVisualMap(game) {
 
   return [
     "CSV SIMURGH SECTOR MAP",
-    "legend: * current  + visited  ? unvisited",
+    "legend: * current  + visited  ~ scanned  ? unvisited",
     "",
     `                 ${node("sector-02")} ${link("sector-02", "sector-04")} ${node("sector-04")} ${link("sector-04", "sector-06")} ${node("sector-06")}`,
     `                    ${vertical("sector-02", "sector-01")}          ${vertical("sector-04", "sector-03")}          ${vertical("sector-06", "sector-05")}`,
@@ -421,16 +478,36 @@ function formatVisualMap(game) {
 
 function formatMapNode(game, id) {
   const sector = sectorMap[id];
-  const marker = game.ship.location === id ? "*" : game.visited.includes(id) ? "+" : "?";
+  const known = isKnownSector(game, id);
+  const marker = game.ship.location === id ? "*" : game.visited.includes(id) ? "+" : known ? "~" : "?";
   const number = id.replace("sector-", "");
-  const label = game.visited.includes(id) || game.ship.location === id ? sector.name : "unscanned";
+  const label = known ? sector.name : "unscanned";
   return `[${marker}${number} ${truncate(label, 15).padEnd(15)}]`;
 }
 
 function isExploredLink(game, from, to) {
   const connected = sectorMap[from].links.includes(to) || sectorMap[to].links.includes(from);
-  const explored = game.visited.includes(from) || game.visited.includes(to) || game.ship.location === from || game.ship.location === to;
+  const explored = isKnownSector(game, from) || isKnownSector(game, to);
   return connected && explored;
+}
+
+function formatAdjacentScanReturn(id, game) {
+  const sector = sectorMap[id];
+  const visited = game.visited.includes(id) ? "visited" : "unvisited";
+  const archive = sector.fragment && !game.discoveredFragments.includes(sector.fragment) ? "archive signature present" : "no new archive signature";
+  return [
+    `- ${id}: ${sector.name}`,
+    `  state: ${visited}; signal bias ${sector.signal}; links ${sector.links.join(", ")}`,
+    `  archive: ${archive}`,
+  ];
+}
+
+function getKnownSectors(game) {
+  return [...new Set([...(game.visited || []), ...(game.scanned || []), game.ship.location])];
+}
+
+function isKnownSector(game, id) {
+  return id === game.ship.location || game.visited.includes(id) || (game.scanned || []).includes(id);
 }
 
 function applyEffects(game, effects) {

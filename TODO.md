@@ -2,6 +2,27 @@
 
 Potential next steps for turning the current vertical slice into a stronger playable prototype.
 
+## Gameplay Priorities
+
+Focus the next major iteration on making the filesystem the real game board and Lua the best tool for understanding it at scale.
+
+- Expand scheduled degradation jobs so they can inject new warnings, drift records, and eventually file-level artifact changes under `/ship/systems/<system>/`.
+- Expand unresolved fault symptoms from recurring log evidence into configs, diagnostics, and ship telemetry effects.
+- Expand multi-file repair consistency with more cross-checks and clearer in-world hints. Current checks compare related configs, baselines, diagnostics, manifests, and tables.
+- Add commands and Lua helpers that compare live artifacts under `/ship/systems/<system>` against baseline snapshots under `/ship/baselines/<system>`.
+- Expand Unix-style inspection utilities beyond the current `diff`, `head`, `tail`, `wc`, `sort`, `uniq`, and `checksum` implementations as repair investigations get deeper.
+- Expand `diagnose SYSTEM` with more ambiguous symptoms and richer recommendations as more fault families are added.
+- Deepen recurring fault families so overlapping symptoms can be caused by multiple file-level root causes.
+- Expand broken or incomplete repair scripts under `/ship/systems/<system>/scripts/` into teachable repair exercises.
+- Expand sample Lua audit scripts beyond `/home/operator/audit.lua` so players can automate baselines, logs, and fault-family checks.
+- Extend `watch FILE [COUNT]` with clearer resource costs and guardrails if automation becomes too strong.
+- Add more archive-gated material under the current unlocked directories:
+  - `/archive/manuals/advanced`
+  - `/archive/crew/private`
+  - `/archive/diagnostics/historical`
+- Add more noisy, stale, or contradictory files so players must learn which records are authoritative.
+- Add more cross-links between system manuals, service logs, and story fragments so technical investigation also reveals the Simurgh's history.
+
 ## Gameplay Loop
 
 - Add a `newrun <seed>` command so players can start fresh seeded runs from inside the terminal.

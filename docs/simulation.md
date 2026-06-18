@@ -45,7 +45,17 @@ Each cycle:
 2. Applies resource drift from power allocation.
 3. Applies environmental drift from power allocation, current resources, system states, and event effects.
 4. Applies a scheduled event every second turn.
-5. Checks win/loss conditions.
+5. Appends scheduled per-system cycle records to `/ship/systems/<system>/status.log`.
+6. Checks win/loss conditions.
+
+Scheduled system log records are filesystem artifacts. They are appended after time-advancing commands and after Lua scripts that advance time through the ship API. Each record includes the current turn timestamp, system state level, and system-specific drift/readout values.
+
+If repair artifacts match a known fault signature, the scheduler also appends:
+
+- a `[FAULT]` symptom line to `/ship/systems/<system>/status.log`
+- an `ACTIVE <fault-id>` evidence line to `/ship/systems/<system>/faults.log`
+
+These recurring lines are intentionally filesystem-visible so players can discover persistent faults with shell tools or Lua scripts.
 
 ## Resource Drift
 
@@ -178,7 +188,7 @@ The propulsion system state currently does not directly change jump cost or cool
 Sensors affect:
 
 - signal gain through power allocation
-- scan output and archive fragment discovery through player action
+- scan output, adjacent sector resolution, and archive fragment discovery through player action
 - status diagnostics for known sectors and local signal bias
 
 Current signal gain:
@@ -186,6 +196,8 @@ Current signal gain:
 ```text
 signal += floor(sensors allocation / 15)
 ```
+
+When sensors have at least `30` grid units allocated, `scan` resolves adjacent sectors into the run's scanned-sector list. Scanned sectors show names, route links, signal bias, and archive signatures in scan/map output, but they are not marked visited and do not yield archive fragments until the player jumps there and scans directly.
 
 The sensors system state currently appears in diagnostics but does not directly reduce signal gain. This is a good candidate for future tuning.
 
@@ -232,11 +244,11 @@ The main cross-system relationships are:
 | Life support allocation | Oxygen reserve | Higher allocation improves or slows oxygen loss. |
 | Life support allocation | Atmosphere | Controls pressure, O2 fraction, humidity, and CO2. |
 | Life support state | Atmosphere | `damaged` and `unstable` add leak penalties. |
-| Sensors allocation | Signal | Higher allocation increases signal gain. |
+| Sensors allocation | Signal and map knowledge | Higher allocation increases signal gain; allocation >= 30 enables adjacent-sector scan returns. |
 | Archive state | Particulate | `corrupted` and `unstable` increase dust. |
 | Archive allocation | Particulate | Higher allocation improves archive dust handling. |
 | Hull damage events | Particulate | Hull damage increases particulate load. |
-| Scan action | Archives/story | Can recover archive fragments in sectors. |
+| Scan action | Archives/story/map | Can recover archive fragments in the current sector and, with enough sensor power, resolve adjacent sectors. |
 | Jump action | Fuel/location | Costs fuel and changes sectors. |
 
 ## Repair Interaction
@@ -247,7 +259,23 @@ Repairs are artifact validated. Each system has files under:
 /ship/systems/<system>
 ```
 
+Clean reference snapshots live under:
+
+```text
+/ship/baselines/<system>
+```
+
+Baseline directories mirror stable repair artifacts for each system while excluding volatile logs and scripts. They are intended for manual inspection, Lua audits, and future `diff`-style tools.
+
 Running `repair <system>` checks those files against known fault signatures.
+
+Some fault signatures are single-file checks, such as a bad threshold or an offline relay. Others are multi-file consistency checks. Current consistency examples include:
+
+- reactor `config.ini` values matching `diagnostics/baseline.txt`
+- life support gas targets matching baseline values and atmosphere sensor averages
+- sensor `filters.ini` matching `calibration.dat` and baseline thresholds
+- archive `manifest.tsv` offsets matching `index.map`
+- propulsion planner settings matching diagnostics and the active fuel tank table
 
 If faults remain:
 
@@ -316,6 +344,7 @@ Some system states are currently diagnostic labels rather than full mechanical m
 - `reactor=degraded` does not directly alter the power or heat formulas.
 - `sensors=unstable` does not directly reduce signal gain or scan fidelity.
 - `propulsion` state does not directly alter jump cost or cooling support.
-- Artifact faults are recognized by `status` and `repair`, but most do not yet produce independent recurring symptoms.
+- Artifact faults are recognized by `status`, `repair`, and scheduled system logs, but most do not yet mutate ship resources or repair artifacts independently.
+- Scheduled system logs record drift and warnings, but they do not yet inject new faults or mutate repair artifacts by themselves.
 
 The intended next step is to make each unresolved system fault produce a specific gradual consequence while preserving the current step-and-drift structure.
